@@ -1,12 +1,14 @@
-package app
+package http
 
 import (
+	"net/http"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"net/http"
 )
 
-func loadRoutes() *chi.Mux {
+// LoadRoutes инициализирует и возвращает маршруты приложения
+func LoadRoutes() *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
