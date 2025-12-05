@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
+	authMiddleware "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 )
 
 func NewRouter(authHandler *handler.AuthHandler) *chi.Mux {
@@ -19,9 +20,14 @@ func NewRouter(authHandler *handler.AuthHandler) *chi.Mux {
 		w.Write([]byte("OK"))
 	})
 
-	router.Route("/auth", func(r chi.Router) {
-		r.Post("/register", authHandler.Register)
-		r.Post("/login", authHandler.Login)
+	router.Group(func(r chi.Router) {
+		r.Post("/auth/register", authHandler.Register)
+		r.Post("/auth/login", authHandler.Login)
+	})
+
+	router.Group(func(r chi.Router) {
+		r.Use(authMiddleware.AuthMiddleware)
+		r.Get("/auth/me", authHandler.Me)
 	})
 
 	return router

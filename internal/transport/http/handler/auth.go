@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"net/http"
 )
 
@@ -57,4 +59,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{"token": token})
+}
+
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte(fmt.Sprintf("Your user ID is: %d", userID)))
 }
