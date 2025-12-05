@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
 	"log/slog"
 	"net/http"
 	"time"
@@ -21,7 +25,19 @@ type App struct {
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
-	router := transport.NewRouter()
+
+	_, err := db.NewCreateTable().Model((*domain.User)(nil)).IfNotExists().Exec(context.Background())
+	if err != nil {
+		log.Error("failed to create users table", slog.String("error", err.Error()))
+	}
+
+	userRepo := repo.NewUserRepo(db)
+
+	authService := service.NewAuthService(userRepo)
+
+	authHandler := handler.NewAuthHandler(authService)
+
+	router := transport.NewRouter(authHandler)
 
 	return &App{
 		cfg:    cfg,

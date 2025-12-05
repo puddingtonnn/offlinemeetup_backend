@@ -7,12 +7,12 @@ import (
 
 type User struct {
 	bun.BaseModel `bun:"table:users"`
-	ID            int64      `bun:",pk,autoincrement"`
-	Email         string     `bun:",unique,notnull"`
-	PasswordHash  string     `bun:",notnull"`
-	Status        UserStatus `bun:",type:varchar(20),default:'active'"`
-	CreatedAt     time.Time  `bun:",nullzero,notnull,default:current_timestamp"`
-	UpdatedAt     time.Time  `bun:",nullzero,notnull,default:current_timestamp"`
+	ID            int64      `bun:",pk,autoincrement" json:"id"`
+	Email         string     `bun:",unique,notnull" json:"email"`
+	PasswordHash  string     `bun:",notnull" json:"-"`
+	Status        UserStatus `bun:",type:varchar(20),default:'active'" json:"status"`
+	CreatedAt     time.Time  `bun:",nullzero,notnull,default:current_timestamp" json:"created_at"`
+	UpdatedAt     time.Time  `bun:",nullzero,notnull,default:current_timestamp" json:"updated_at"`
 }
 
 type UserStatus string
