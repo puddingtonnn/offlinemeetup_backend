@@ -2,49 +2,55 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
+	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
+	"log/slog"
 	"net/http"
+	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/db"
-	httpHandler "github.com/puddingtonnn/offlinemeetup_backend/internal/handler/http"
 	"github.com/uptrace/bun"
 )
 
 type App struct {
+	cfg    *config.Config
+	log    *slog.Logger
 	router http.Handler
 	DB     *bun.DB
 }
 
-// New создаёт новое приложение с подключением к БД и инициализацией схемы
-func New(dbDSN string) *App {
-	// Инициализация БД
-	database := db.New(dbDSN)
+func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
+	router := transport.NewRouter()
 
-	// Инициализация схемы (миграции)
-	if err := db.InitSchema(context.Background(), database); err != nil {
-		panic(err)
-	}
-
-	// Инициализация маршрутов
-	router := httpHandler.LoadRoutes()
-
-	app := &App{
+	return &App{
+		cfg:    cfg,
+		log:    log,
 		router: router,
-		DB:     database,
+		DB:     db,
 	}
-
-	return app
 }
 
-// Start запускает HTTP сервер
-func (a *App) Start(ctx context.Context) error {
+func (a *App) Run(ctx context.Context) error {
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    ":" + a.cfg.AppPort,
 		Handler: a.router,
 	}
-	err := server.ListenAndServe()
-	if err != nil {
-		return fmt.Errorf("failed to start server: %w", err)
+	go func() {
+		a.log.Info("Starting server", slog.String("port", a.cfg.AppPort))
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			a.log.Error("Server execution failed", slog.String("error", err.Error()))
+		}
+	}()
+	<-ctx.Done()
+	a.log.Info("Shutting down server", slog.String("port", a.cfg.AppPort))
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("server shutdown failed: %w", err)
 	}
+
 	return nil
 }

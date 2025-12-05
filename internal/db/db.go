@@ -9,14 +9,14 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 )
 
-// New создаёт и возвращает подключение к базе данных
-func New(dbDSN string) *bun.DB {
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dbDSN)))
+func New(dsn string) (*bun.DB, error) {
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
 
-	database := bun.NewDB(sqldb, pgdialect.New())
-	if err := database.Ping(); err != nil {
-		panic(fmt.Errorf("db connection failed: %w", err))
+	db := bun.NewDB(sqldb, pgdialect.New())
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("db connection failed: %w", err)
 	}
 
-	return database
+	return db, nil
 }

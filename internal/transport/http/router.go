@@ -7,16 +7,16 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-// LoadRoutes инициализирует и возвращает маршруты приложения
-func LoadRoutes() *chi.Mux {
+func NewRouter() *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
+	router.Use(middleware.URLFormat)
 
-	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Hello World"))
+		w.Write([]byte("OK"))
 	})
 
 	return router
