@@ -9,3 +9,6 @@ build:
 
 deps:
 	go mod tidy
+
+swag:
+	swag init -g $(CMD)

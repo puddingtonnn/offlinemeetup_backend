@@ -1,0 +1,15 @@
+basePath: /
+host: localhost:8050
+info:
+  contact: {}
+  description: API Server for Mobile Application "Meetuper"
+  title: Offline Meetup API
+  version: "1.0"
+paths: {}
+securityDefinitions:
+  BearerAuth:
+    description: 'Введите токен в формате: Bearer <your-token>'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

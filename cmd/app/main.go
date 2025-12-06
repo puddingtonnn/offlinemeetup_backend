@@ -2,15 +2,27 @@ package main
 
 import (
 	"context"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/app"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/db"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/app"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/db"
 )
 
+// @title           Offline Meetup API
+// @version         1.0
+// @description     API Server for Mobile Application "Meetuper"
+
+// @host            localhost:8050
+// @BasePath        /
+
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Введите токен в формате: Bearer <your-token>
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 

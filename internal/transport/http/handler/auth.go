@@ -3,9 +3,10 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
-	"net/http"
 )
 
 type AuthHandler struct {
@@ -28,6 +29,17 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+// Register - ручка регистрации
+// @Summary      Регистрация нового пользователя
+// @Description  Создает пользователя в базе и возвращает его ID.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body registerRequest true "Данные для регистрации"
+// @Success      201  {object}  map[string]interface{} "Успешная регистрация, возвращает ID"
+// @Failure      400  {string}  string "Неверный формат запроса"
+// @Failure      500  {string}  string "Ошибка сервера (например, email уже занят)"
+// @Router       /auth/register [post]
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -45,6 +57,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id})
 }
 
+// Login - ручка входа
+// @Summary      Вход в систему
+// @Description  Проверяет email/пароль и выдает JWT токен.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body loginRequest true "Данные для входа"
+// @Success      200  {object}  map[string]string "Успешный вход, возвращает token"
+// @Failure      400  {string}  string "Неверный запрос"
+// @Failure      401  {string}  string "Неверный email или пароль"
+// @Router       /auth/login [post]
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -61,6 +84,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"token": token})
 }
 
+// Me - получение своего профиля
+// @Summary      Получить мой профиль
+// @Description  Возвращает ID текущего пользователя (тест авторизации).
+// @Tags         Auth
+// @Security     BearerAuth
+// @Produce      json
+// @Success      200  {string}  string "Приветствие с ID"
+// @Failure      401  {string}  string "Пользователь не авторизован"
+// @Router       /auth/me [get]
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {

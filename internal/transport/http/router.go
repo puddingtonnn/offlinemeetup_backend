@@ -5,8 +5,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	_ "github.com/puddingtonnn/offlinemeetup_backend/cmd/app/docs"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
 	authMiddleware "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
 func NewRouter(authHandler *handler.AuthHandler) *chi.Mux {
@@ -29,6 +31,10 @@ func NewRouter(authHandler *handler.AuthHandler) *chi.Mux {
 		r.Use(authMiddleware.AuthMiddleware)
 		r.Get("/auth/me", authHandler.Me)
 	})
+
+	router.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("http://localhost:8050/swagger/doc.json"),
+	))
 
 	return router
 }
