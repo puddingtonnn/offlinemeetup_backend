@@ -11,4 +11,4 @@ deps:
 	go mod tidy
 
 swag:
-	swag init -g $(CMD)
+	go run github.com/swaggo/swag/cmd/swag@latest init -g $(CMD) -d ./
