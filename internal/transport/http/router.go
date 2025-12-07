@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	_ "github.com/puddingtonnn/offlinemeetup_backend/cmd/app/docs"
+	_ "github.com/puddingtonnn/offlinemeetup_backend/docs"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
 	authMiddleware "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"

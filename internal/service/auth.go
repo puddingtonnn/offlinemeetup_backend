@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"golang.org/x/crypto/bcrypt"
@@ -16,8 +17,8 @@ type AuthService struct {
 	repo *repo.UserRepo
 }
 
-func NewAuthService(repo *repo.UserRepo) *AuthService {
-	return &AuthService{repo: repo}
+func NewAuthService(repo *repo.UserRepo, cfg *config.Config) *AuthService {
+	return &AuthService{repo: repo, cfg: cfg}
 }
 
 func (s *AuthService) Register(ctx context.Context, email, password string) (int64, error) {

@@ -30,7 +30,10 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	if err != nil {
 		log.Error("failed to create users table", slog.String("error", err.Error()))
 	}
-
+	_, err = db.NewCreateTable().Model((*domain.SocialAccount)(nil)).IfNotExists().Exec(context.Background())
+	if err != nil {
+		log.Error("failed to create social accounts table", slog.String("error", err.Error()))
+	}
 	userRepo := repo.NewUserRepo(db)
 
 	authService := service.NewAuthService(userRepo)
