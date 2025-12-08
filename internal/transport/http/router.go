@@ -23,8 +23,8 @@ func NewRouter(authHandler *handler.AuthHandler) *chi.Mux {
 	})
 
 	router.Group(func(r chi.Router) {
-		r.Post("/auth/register", authHandler.Register)
-		r.Post("/auth/login", authHandler.Login)
+		r.Post("/auth/google", authHandler.GoogleLogin)
+		r.Post("/auth/telegram", authHandler.TelegramLogin)
 	})
 
 	router.Group(func(r chi.Router) {

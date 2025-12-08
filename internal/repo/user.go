@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/uptrace/bun"
@@ -19,8 +20,11 @@ func NewUserRepo(db *bun.DB) *UserRepo {
 func (r *UserRepo) GetBySocialID(ctx context.Context, provider, socialID string) (*domain.User, error) {
 	var socialAccount domain.SocialAccount
 
-	err := r.db.NewSelect().Model(&socialAccount).Relation("User").Where("provider = ?", provider).Where("socialID = ?", socialID).Scan(ctx)
+	err := r.db.NewSelect().Model(&socialAccount).Relation("User").Where("provider = ?", provider).Where("social_id = ?", socialID).Scan(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 

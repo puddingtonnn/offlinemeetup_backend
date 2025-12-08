@@ -22,7 +22,7 @@ type SocialAccount struct {
 	ID        int64     `bun:",pk,autoincrement"`
 	UserID    int64     `bun:",notnull"`
 	Provider  string    `bun:",notnull"`
-	SocialID  string    `bun:",notnull"`
+	SocialID  string    `bun:"social_id,notnull"`
 	CreatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 
 	User *User `bun:"rel:belongs-to,join:user_id=id"`

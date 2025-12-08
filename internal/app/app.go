@@ -36,7 +36,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	}
 	userRepo := repo.NewUserRepo(db)
 
-	authService := service.NewAuthService(userRepo)
+	authService := service.NewAuthService(userRepo, cfg)
 
 	authHandler := handler.NewAuthHandler(authService)
 

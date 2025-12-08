@@ -19,69 +19,60 @@ func NewAuthHandler(service *service.AuthService) *AuthHandler {
 	}
 }
 
-type registerRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+type googleLoginRequest struct {
+	Token string `json:"token"`
 }
 
-type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-// Register - ручка регистрации
-// @Summary      Регистрация нового пользователя
-// @Description  Создает пользователя в базе и возвращает его ID.
+// GoogleLogin
+// @Summary      Вход через Google
+// @Description  Принимает ID Token от Google SDK, возвращает JWT.
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
-// @Param        input body registerRequest true "Данные для регистрации"
-// @Success      201  {object}  map[string]interface{} "Успешная регистрация, возвращает ID"
-// @Failure      400  {string}  string "Неверный формат запроса"
-// @Failure      500  {string}  string "Ошибка сервера (например, email уже занят)"
-// @Router       /auth/register [post]
-func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	var req registerRequest
+// @Param        input body googleLoginRequest true "Google ID Token"
+// @Success      200  {object}  map[string]string
+// @Failure      400  {string}  string "Error"
+// @Router       /auth/google [post]
+func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	var req googleLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 
-	id, err := h.service.Register(r.Context(), req.Email, req.Password)
+	token, err := h.service.LoginGoogle(r.Context(), req.Token)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
+}
+
+// TelegramLogin
+// @Summary      Вход через Telegram
+// @Description  Принимает данные виджета Telegram, проверяет хеш, возвращает JWT.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body service.TelegramAuthData true "Telegram Data"
+// @Success      200  {object}  map[string]string
+// @Failure      400  {string}  string "Error"
+// @Router       /auth/telegram [post]
+func (h *AuthHandler) TelegramLogin(w http.ResponseWriter, r *http.Request) {
+	var req service.TelegramAuthData
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	token, err := h.service.LoginTelegram(r.Context(), req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": id})
-}
-
-// Login - ручка входа
-// @Summary      Вход в систему
-// @Description  Проверяет email/пароль и выдает JWT токен.
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        input body loginRequest true "Данные для входа"
-// @Success      200  {object}  map[string]string "Успешный вход, возвращает token"
-// @Failure      400  {string}  string "Неверный запрос"
-// @Failure      401  {string}  string "Неверный email или пароль"
-// @Router       /auth/login [post]
-func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	token, err := h.service.Login(r.Context(), req.Email, req.Password)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{"token": token})
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
 // Me - получение своего профиля

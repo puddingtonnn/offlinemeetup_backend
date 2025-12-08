@@ -2,12 +2,18 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
-	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/api/idtoken"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -15,50 +21,102 @@ var jwtSecret = []byte("super-secret-key")
 
 type AuthService struct {
 	repo *repo.UserRepo
+	cfg  *config.Config
 }
 
 func NewAuthService(repo *repo.UserRepo, cfg *config.Config) *AuthService {
 	return &AuthService{repo: repo, cfg: cfg}
 }
 
-func (s *AuthService) Register(ctx context.Context, email, password string) (int64, error) {
-	passHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+func (s *AuthService) LoginGoogle(ctx context.Context, tokenString string) (string, error) {
+	payload, err := idtoken.Validate(ctx, tokenString, s.cfg.GoogleClientID)
 	if err != nil {
-		return 0, err
+		return "", fmt.Errorf("invalid google token: %w", err)
 	}
 
-	user := &domain.User{
-		Email:        email,
-		PasswordHash: string(passHash),
-		Status:       domain.UserStatusActive,
+	socialID := payload.Subject
+	email := ""
+	if val, ok := payload.Claims["email"].(string); ok {
+		email = val
 	}
 
-	if err := s.repo.Create(ctx, user); err != nil {
-		return 0, err
-	}
-
-	return user.ID, nil
+	return s.findOrCreateUser(ctx, "google", socialID, email)
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string) (string, error) {
-	user, err := s.repo.GetByEmail(ctx, email)
-	if err != nil {
-		return "", errors.New("invalid email or password")
+type TelegramAuthData struct {
+	ID        int64  `json:"id"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Username  string `json:"username"`
+	PhotoURL  string `json:"photo_url"`
+	AuthDate  int64  `json:"auth_date"`
+	Hash      string `json:"hash"`
+}
+
+func (s *AuthService) LoginTelegram(ctx context.Context, data TelegramAuthData) (string, error) {
+	if time.Now().Unix()-data.AuthDate > 86400 {
+		return "", errors.New("telegram auth data is expired")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return "", errors.New("invalid email or password")
+	if !s.validateTelegramHash(data) {
+		return "", errors.New("invalid telegram hash")
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": user.ID,
-		"exp":     time.Now().Add(time.Hour * 720).Unix(),
-	})
+	socialID := fmt.Sprintf("%d", data.ID)
+	return s.findOrCreateUser(ctx, "telegram", socialID, "")
+}
 
-	tokensString, err := token.SignedString(jwtSecret)
+func (s *AuthService) validateTelegramHash(data TelegramAuthData) bool {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("auth_date=%d", data.AuthDate))
+	parts = append(parts, fmt.Sprintf("first_name=%s", data.FirstName))
+	parts = append(parts, fmt.Sprintf("id=%d", data.ID))
+	if data.LastName != "" {
+		parts = append(parts, fmt.Sprintf("last_name=%s", data.LastName))
+	}
+	if data.PhotoURL != "" {
+		parts = append(parts, fmt.Sprintf("photo_url=%s", data.PhotoURL))
+	}
+	if data.Username != "" {
+		parts = append(parts, fmt.Sprintf("username=%s", data.Username))
+	}
+
+	sort.Strings(parts)
+
+	dataCheckString := strings.Join(parts, "\n")
+
+	sha256hash := sha256.New()
+	sha256hash.Write([]byte(s.cfg.TelegramBotToken))
+	secretKey := sha256hash.Sum(nil)
+
+	hmacHash := hmac.New(sha256.New, secretKey)
+	hmacHash.Write([]byte(dataCheckString))
+	calculatedHash := hex.EncodeToString(hmacHash.Sum(nil))
+
+	return calculatedHash == data.Hash
+}
+
+func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, socialID string, email string) (string, error) {
+	user, err := s.repo.GetBySocialID(ctx, provider, socialID)
 	if err != nil {
 		return "", err
 	}
 
-	return tokensString, nil
+	if user == nil {
+		newUser := &domain.User{
+			Email:  email,
+			Role:   "user",
+			Status: domain.UserStatusActive,
+		}
+		user, err = s.repo.CreateUserWithSocial(ctx, newUser, provider, socialID)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": user.ID,
+		"exp":     time.Now().Add(time.Hour * 72).Unix(),
+	})
+	return token.SignedString(jwtSecret)
 }
