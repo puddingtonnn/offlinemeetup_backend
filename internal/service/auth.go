@@ -108,7 +108,13 @@ func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, soc
 			Role:   "user",
 			Status: domain.UserStatusActive,
 		}
-		user, err = s.repo.CreateUserWithSocial(ctx, newUser, provider, socialID)
+		tempNick := fmt.Sprintf("user_%s", socialID)
+		newProfile := &domain.Profile{
+			Nickname:  tempNick,
+			AvatarURL: "",
+			Bio:       "",
+		}
+		user, err = s.repo.CreateUserWithSocial(ctx, newUser, provider, socialID, newProfile)
 		if err != nil {
 			return "", err
 		}
@@ -116,7 +122,7 @@ func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, soc
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": user.ID,
-		"exp":     time.Now().Add(time.Hour * 72).Unix(),
+		"exp":     time.Now().Add(time.Hour * 24 * 30).Unix(),
 	})
 	return token.SignedString(jwtSecret)
 }

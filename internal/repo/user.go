@@ -31,7 +31,7 @@ func (r *UserRepo) GetBySocialID(ctx context.Context, provider, socialID string)
 	return socialAccount.User, nil
 }
 
-func (r *UserRepo) CreateUserWithSocial(ctx context.Context, user *domain.User, provider, socialID string) (*domain.User, error) {
+func (r *UserRepo) CreateUserWithSocial(ctx context.Context, user *domain.User, provider, socialID string, profile *domain.Profile) (*domain.User, error) {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -48,6 +48,12 @@ func (r *UserRepo) CreateUserWithSocial(ctx context.Context, user *domain.User, 
 	_, err = tx.NewInsert().Model(social).Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error creating social account: %w", err)
+	}
+
+	profile.UserID = user.ID
+	_, err = tx.NewInsert().Model(profile).Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error creating profile: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

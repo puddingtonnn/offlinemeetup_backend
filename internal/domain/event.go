@@ -20,21 +20,3 @@ type Event struct {
 
 	Creator *User `bun:"rel-belongs-to,join:creator_id=id"`
 }
-
-type Tag struct {
-	bun.BaseModel `bun:"table:tags"`
-
-	ID   int64  `bun:",pk,autoincrement"`
-	Name string `bun:",notnull,unique"`
-	Icon string `bun:",notnull"`
-}
-
-type EventTag struct {
-	bun.BaseModel `bun:"table:event_tags"`
-
-	EventID int64  `bun:",pk"`
-	Event   *Event `bun:"rel:belongs-to,join:event_id=id"`
-
-	TagID int64 `bun:",pk"`
-	Tag   *Tag  `bun:"rel:belongs-to,join:tag_id=id"`
-}
