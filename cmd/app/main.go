@@ -2,16 +2,52 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/app"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/db"
 )
 
-func main() {
-	dsn := "postgres://admin:MeetuperPassword@localhost:5432/postgres?sslmode=disable"
-	app := app.New(dsn)
+// @title           Offline Meetup API
+// @version         1.0
+// @description     API Server for Mobile Application "Meetuper"
 
-	err := app.Start(context.TODO())
+// @host            localhost:8050
+// @BasePath        /
+
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Введите токен в формате: Bearer <your-token>
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	cfg, err := config.Load()
 	if err != nil {
-		fmt.Println("failed to start app:", err)
+		logger.Error("Failed to load config", slog.String("err", err.Error()))
+		os.Exit(1)
 	}
+
+	database, err := db.New(cfg.DBDSN)
+	if err != nil {
+		logger.Error("Failed to connect to database", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+	defer database.Close()
+
+	application := app.New(logger, cfg, database)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := application.Run(ctx); err != nil {
+		logger.Error("Failed to run", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+
+	logger.Info("Application stopped gracefully")
 }
