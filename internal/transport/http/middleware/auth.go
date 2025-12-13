@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -26,7 +27,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-			return []byte("super-secret-key"), nil
+			secret := os.Getenv("JWT_SECRET_KEY")
+			if secret == "" {
+				return nil, fmt.Errorf("missing JWT secret key")
+			}
+
+			return []byte(secret), nil
 		})
 
 		if err != nil || !token.Valid {
