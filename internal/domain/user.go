@@ -19,11 +19,11 @@ type User struct {
 type SocialAccount struct {
 	bun.BaseModel `bun:"table:social_accounts" swaggerignore:"true"`
 
-	ID        int64     `bun:",pk,autoincrement"`
-	UserID    int64     `bun:",notnull"`
-	Provider  string    `bun:",notnull"`
-	SocialID  string    `bun:"social_id,notnull"`
-	CreatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	ID        int64     `bun:",pk,autoincrement" json:"id"`
+	UserID    int64     `bun:",notnull" json:"user_id"`
+	Provider  string    `bun:",notnull" json:"provider"`
+	SocialID  string    `bun:"social_id,notnull" json:"social_id"`
+	CreatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp" json:"created_at"`
 
 	User *User `bun:"rel:belongs-to,join:user_id=id"`
 }
