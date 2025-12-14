@@ -12,8 +12,8 @@ type Tag struct {
 type ProfileTag struct {
 	bun.BaseModel `bun:"table:profile_tags" swaggerignore:"true"`
 
-	ProfileID int64 `bun:",pk"`
-	TagID     int64 `bun:",pk"`
+	ProfileID int64 `bun:",pk" json:"profile_id"`
+	TagID     int64 `bun:",pk" json:"tag_id"`
 
 	Profile *Profile `bun:"rel:belongs-to,join:profile_id=id"`
 	Tag     *Tag     `bun:"rel:belongs-to,join:tag_id=id"`
