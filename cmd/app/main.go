@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"github.com/puddingtonnn/offlinemeetup_backend/migrations"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/pressly/goose/v3"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/app"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/db"
+	_ "github.com/uptrace/bun/driver/pgdriver"
 )
 
 // @title           Offline Meetup API
@@ -29,6 +33,24 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Error("Failed to load config", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+
+	rawDB, err := sql.Open("pg", cfg.DBDSN)
+	if err != nil {
+		logger.Error("Failed to open database for migrations", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+	defer rawDB.Close()
+
+	goose.SetBaseFS(migrations.EmbedFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		logger.Error("Failed to set postgres dialect", slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+
+	if err := goose.Up(rawDB, "."); err != nil {
+		logger.Error("Migration failed", slog.String("err", err.Error()))
 		os.Exit(1)
 	}
 
