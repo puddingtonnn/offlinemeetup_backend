@@ -56,6 +56,6 @@ jobs:
             
             docker-compose pull meetuper_backend
             
-            docker-compose up -d --no-deps meetuper_backend
+            docker-compose up -d
             
             docker image prune -f
