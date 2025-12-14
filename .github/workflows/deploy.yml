@@ -50,12 +50,12 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo ${{ secrets.CR_PAT }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
             cd /root/my-go-app
             
-            docker compose pull meetuper_backend
+            docker-compose pull meetuper_backend
             
-            docker compose up -d --no-deps meetuper_backend
+            docker-compose up -d --no-deps meetuper_backend
             
             docker image prune -f
