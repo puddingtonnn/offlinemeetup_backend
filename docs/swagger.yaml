@@ -1,0 +1,263 @@
+basePath: /
+definitions:
+  domain.Profile:
+    properties:
+      avatar_url:
+        type: string
+      bio:
+        type: string
+      id:
+        type: integer
+      is_organizer:
+        type: boolean
+      nickname:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/domain.Tag'
+        type: array
+      updatedAt:
+        type: string
+      user:
+        $ref: '#/definitions/domain.User'
+      user_id:
+        type: integer
+    type: object
+  domain.SocialAccount:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      provider:
+        type: string
+      socialID:
+        type: string
+      user:
+        $ref: '#/definitions/domain.User'
+      userID:
+        type: integer
+    type: object
+  domain.Tag:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  domain.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      role:
+        type: string
+      socials:
+        items:
+          $ref: '#/definitions/domain.SocialAccount'
+        type: array
+      status:
+        $ref: '#/definitions/domain.UserStatus'
+      updated_at:
+        type: string
+    type: object
+  domain.UserStatus:
+    enum:
+    - active
+    - inactive
+    - banned
+    type: string
+    x-enum-varnames:
+    - UserStatusActive
+    - UserStatusInactive
+    - UserStatusBanned
+  handler.googleLoginRequest:
+    properties:
+      token:
+        type: string
+    type: object
+  service.TelegramAuthData:
+    properties:
+      auth_date:
+        type: integer
+      first_name:
+        type: string
+      hash:
+        type: string
+      id:
+        type: integer
+      last_name:
+        type: string
+      photo_url:
+        type: string
+      username:
+        type: string
+    type: object
+  service.UpdateProfileInput:
+    properties:
+      avatar_url:
+        type: string
+      bio:
+        type: string
+      nickname:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+host: localhost:8050
+info:
+  contact: {}
+  description: API Server for Mobile Application "Meetuper"
+  title: Offline Meetup API
+  version: "1.0"
+paths:
+  /api/profile:
+    get:
+      description: Возвращает профиль текущего авторизованного пользователя. ID берется
+        из JWT токена.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Profile'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "404":
+          description: Profile not found
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Получить мой профиль
+      tags:
+      - Profile
+    put:
+      consumes:
+      - application/json
+      description: Обновляет никнейм, био, аватар и теги пользователя.
+      parameters:
+      - description: Данные для обновления профиля
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateProfileInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Profile'
+        "400":
+          description: Invalid input
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Обновить мой профиль
+      tags:
+      - Profile
+  /auth/google:
+    post:
+      consumes:
+      - application/json
+      description: Принимает ID Token от Google SDK, возвращает JWT.
+      parameters:
+      - description: Google ID Token
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/handler.googleLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Error
+          schema:
+            type: string
+      summary: Вход через Google
+      tags:
+      - Auth
+  /auth/me:
+    get:
+      description: Возвращает ID текущего пользователя (тест авторизации).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Приветствие с ID
+          schema:
+            type: string
+        "401":
+          description: Пользователь не авторизован
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Получить мой профиль
+      tags:
+      - Auth
+  /auth/telegram:
+    post:
+      consumes:
+      - application/json
+      description: Принимает данные виджета Telegram, проверяет хеш, возвращает JWT.
+      parameters:
+      - description: Telegram Data
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/service.TelegramAuthData'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Error
+          schema:
+            type: string
+      summary: Вход через Telegram
+      tags:
+      - Auth
+securityDefinitions:
+  BearerAuth:
+    description: 'Введите токен в формате: Bearer <your-token>'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
