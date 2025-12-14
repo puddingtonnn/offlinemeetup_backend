@@ -17,8 +17,6 @@ import (
 	"time"
 )
 
-var jwtSecret = []byte("super-secret-key")
-
 type AuthService struct {
 	repo *repo.UserRepo
 	cfg  *config.Config
@@ -121,8 +119,8 @@ func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, soc
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": user.ID,
-		"exp":     time.Now().Add(time.Hour * 24 * 30).Unix(),
+		"userID": user.ID,
+		"exp":    time.Now().Add(time.Hour * 24 * 30).Unix(),
 	})
-	return token.SignedString(jwtSecret)
+	return token.SignedString([]byte(s.cfg.JWTSecret))
 }

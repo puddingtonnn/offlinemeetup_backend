@@ -11,6 +11,7 @@ type Config struct {
 	DBDSN            string
 	GoogleClientID   string
 	TelegramBotToken string
+	JWTSecret        string
 }
 
 func Load() (*Config, error) {
@@ -21,6 +22,7 @@ func Load() (*Config, error) {
 		DBDSN:            os.Getenv("DB_DSN"),
 		GoogleClientID:   os.Getenv("GOOGLE_CLIENT_ID"),
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
+		JWTSecret:        os.Getenv("JWT_SECRET_KEY"),
 	}
 
 	if cfg.AppPort == "" {
@@ -35,6 +37,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.TelegramBotToken == "" {
 		fmt.Println("WARNING: TELEGRAM_BOT_TOKEN is not set")
+	}
+	if cfg.JWTSecret == "" {
+		fmt.Println("WARNING: JWT_SECRET_KEY is not set")
 	}
 
 	return cfg, nil

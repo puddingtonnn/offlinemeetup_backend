@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
@@ -26,21 +25,16 @@ type App struct {
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
-	_, err := db.NewCreateTable().Model((*domain.User)(nil)).IfNotExists().Exec(context.Background())
-	if err != nil {
-		log.Error("failed to create users table", slog.String("error", err.Error()))
-	}
-	_, err = db.NewCreateTable().Model((*domain.SocialAccount)(nil)).IfNotExists().Exec(context.Background())
-	if err != nil {
-		log.Error("failed to create social accounts table", slog.String("error", err.Error()))
-	}
 	userRepo := repo.NewUserRepo(db)
+	profileRepo := repo.NewProfileRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
+	profileService := service.NewProfileService(profileRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
+	profileHandler := handler.NewProfileHandler(profileService)
 
-	router := transport.NewRouter(authHandler)
+	router := transport.NewRouter(authHandler, profileHandler, cfg)
 
 	return &App{
 		cfg:    cfg,

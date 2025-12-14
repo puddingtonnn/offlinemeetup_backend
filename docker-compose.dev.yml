@@ -1,0 +1,14 @@
+services:
+  meetuper_db:
+    image: postgis/postgis:16-3.4-alpine
+    restart: always
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
+    volumes:
+      - ./.data/pg/mount:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    restart: always

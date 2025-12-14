@@ -1,6 +1,7 @@
 package http
 
 import (
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -11,7 +12,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
-func NewRouter(authHandler *handler.AuthHandler) *chi.Mux {
+func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
@@ -28,8 +29,11 @@ func NewRouter(authHandler *handler.AuthHandler) *chi.Mux {
 	})
 
 	router.Group(func(r chi.Router) {
-		r.Use(authMiddleware.AuthMiddleware)
+		r.Use(authMiddleware.AuthMiddleware(cfg))
 		r.Get("/auth/me", authHandler.Me)
+
+		r.Get("/api/profile", profileHandler.GetMyProfile)
+		r.Put("/api/profile", profileHandler.UpdateMyProfile)
 	})
 
 	router.Get("/swagger/*", httpSwagger.Handler(
