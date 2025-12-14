@@ -41,7 +41,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "docker-compose.yml"
-          target: "/root/app/"
+          target: "/root/my-go-app/"
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -52,12 +52,10 @@ jobs:
           script: |
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            # Путь должен совпадать с тем, куда скопировали файл
             cd /root/my-go-app
             
             docker compose pull meetuper_backend
             
-            # Добавил --no-deps, чтобы не пересоздавать базу данных лишний раз
             docker compose up -d --no-deps meetuper_backend
             
             docker image prune -f
