@@ -54,8 +54,8 @@ jobs:
             
             cd /root/my-go-app
             
-            docker-compose pull meetuper_backend
+            docker compose pull meetuper_backend
             
-            docker-compose up -d
+            docker compose up -d
             
             docker image prune -f
