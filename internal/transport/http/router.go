@@ -37,7 +37,7 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 	})
 
 	router.Get("/swagger/*", httpSwagger.Handler(
-		httpSwagger.URL("http://localhost:8050/swagger/doc.json"),
+		httpSwagger.URL("/swagger/doc.json"),
 	))
 
 	return router
