@@ -25,7 +25,10 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 
 	router.Group(func(r chi.Router) {
 		r.Post("/auth/google", authHandler.GoogleLogin)
-		r.Post("/auth/telegram", authHandler.TelegramLogin)
+		r.Route("/auth/telegram", func(r chi.Router) {
+			r.Get("/login", authHandler.ServeTelegramLoginPage)
+			r.Get("/callback", authHandler.TelegramCallBack)
+		})
 	})
 
 	router.Group(func(r chi.Router) {

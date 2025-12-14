@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
@@ -59,20 +60,66 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  map[string]string
 // @Failure      400  {string}  string "Error"
 // @Router       /auth/telegram [post]
-func (h *AuthHandler) TelegramLogin(w http.ResponseWriter, r *http.Request) {
-	var req service.TelegramAuthData
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+//func (h *AuthHandler) TelegramLogin(w http.ResponseWriter, r *http.Request) {
+//	var req service.TelegramAuthData
+//	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+//		http.Error(w, "invalid json", http.StatusBadRequest)
+//		return
+//	}
+//
+//	token, err := h.service.LoginTelegram(r.Context(), req)
+//	if err != nil {
+//		http.Error(w, err.Error(), http.StatusInternalServerError)
+//		return
+//	}
+//
+//	json.NewEncoder(w).Encode(map[string]string{"token": token})
+//}
+
+// TelegramCallBack TelegramCallback
+// @Summary      Callback для виджета Telegram
+// @Description  Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.
+// @Tags         Auth
+// @Router       /auth/telegram/callback [get]
+func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	if q.Get("hash") == "" || q.Get("id") == "" {
+		http.Error(w, "Missing hash or id", http.StatusBadRequest)
 		return
+	}
+
+	id, err := strconv.ParseInt(q.Get("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	authDate, err := strconv.ParseInt(q.Get("auth_date"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid auth_date format", http.StatusBadRequest)
+		return
+	}
+
+	req := service.TelegramAuthData{
+		ID:        id,
+		FirstName: q.Get("first_name"),
+		LastName:  q.Get("last_name"),
+		Username:  q.Get("username"),
+		PhotoURL:  q.Get("photo_url"),
+		AuthDate:  authDate,
+		Hash:      q.Get("hash"),
 	}
 
 	token, err := h.service.LoginTelegram(r.Context(), req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		redirectError := fmt.Sprintf("meetuper://auth/error?message=%s", "auth_failed")
+		http.Redirect(w, r, redirectError, http.StatusNotFound)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	redirectSuccess := fmt.Sprintf("meetuper://auth/success?token=%s", token)
+	http.Redirect(w, r, redirectSuccess, http.StatusFound)
 }
 
 // Me - получение своего профиля
