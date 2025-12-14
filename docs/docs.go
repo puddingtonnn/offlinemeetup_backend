@@ -187,47 +187,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/telegram": {
-            "post": {
-                "description": "Принимает данные виджета Telegram, проверяет хеш, возвращает JWT.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+        "/auth/telegram/callback": {
+            "get": {
+                "description": "Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.",
                 "tags": [
                     "Auth"
                 ],
-                "summary": "Вход через Telegram",
-                "parameters": [
-                    {
-                        "description": "Telegram Data",
-                        "name": "input",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/service.TelegramAuthData"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Error",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
+                "summary": "Callback для виджета Telegram",
+                "responses": {}
             }
         }
     },
@@ -256,7 +223,7 @@ const docTemplate = `{
                         "$ref": "#/definitions/domain.Tag"
                     }
                 },
-                "updatedAt": {
+                "updated_at": {
                     "type": "string"
                 },
                 "user": {
@@ -270,7 +237,7 @@ const docTemplate = `{
         "domain.SocialAccount": {
             "type": "object",
             "properties": {
-                "createdAt": {
+                "created_at": {
                     "type": "string"
                 },
                 "id": {
@@ -279,13 +246,13 @@ const docTemplate = `{
                 "provider": {
                     "type": "string"
                 },
-                "socialID": {
+                "social_id": {
                     "type": "string"
                 },
                 "user": {
                     "$ref": "#/definitions/domain.User"
                 },
-                "userID": {
+                "user_id": {
                     "type": "integer"
                 }
             }
@@ -347,32 +314,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "token": {
-                    "type": "string"
-                }
-            }
-        },
-        "service.TelegramAuthData": {
-            "type": "object",
-            "properties": {
-                "auth_date": {
-                    "type": "integer"
-                },
-                "first_name": {
-                    "type": "string"
-                },
-                "hash": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_name": {
-                    "type": "string"
-                },
-                "photo_url": {
-                    "type": "string"
-                },
-                "username": {
                     "type": "string"
                 }
             }
