@@ -3,6 +3,7 @@ name: Deploy Meetuper
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch: # Добавил возможность ручного запуска для тестов
 
 env:
   REGISTRY: ghcr.io
@@ -34,13 +35,13 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Copy docker-compose.yml to VPS
-          uses: appleboy/scp-action@v0.1.7
-          with:
-            host: ${{ secrets.VPS_HOST }}
-            username: ${{ secrets.VPS_USER }}
-            key: ${{ secrets.SSH_PRIVATE_KEY }}
-            source: "docker-compose.yml"
-            target: "/root/app/"
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.yml"
+          target: "/root/app/"
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -49,16 +50,14 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Логинимся в реестр, чтобы иметь право скачать ваш приватный образ
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            # Переходим в папку проекта
+            # Путь должен совпадать с тем, куда скопировали файл
             cd /root/my-go-app
             
-            # Скачиваем свежий образ бекенда
             docker compose pull meetuper_backend
             
-            docker compose up -d meetuper_backend
+            # Добавил --no-deps, чтобы не пересоздавать базу данных лишний раз
+            docker compose up -d --no-deps meetuper_backend
             
-            # Чистим старые образы
             docker image prune -f
