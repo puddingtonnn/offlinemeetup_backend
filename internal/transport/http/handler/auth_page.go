@@ -10,9 +10,9 @@ func (h *AuthHandler) ServeTelegramLoginPage(w http.ResponseWriter, r *http.Requ
     <body>
         <div style="display:flex; justify-content:center; align-items:center; height:100vh;">
             <script async src="https://telegram.org/js/telegram-widget.js?22" 
-                data-telegram-login="ИМЯ_ТВОЕГО_БОТА" 
+                data-telegram-login="meetuperbot" 
                 data-size="large" 
-                data-auth-url="https://ТВОЙ_ДОМЕН/auth/telegram/callback" 
+                data-auth-url="https://meetuper.site:8443/auth/telegram/callback" 
                 data-request-access="write"></script>
         </div>
     </body>
