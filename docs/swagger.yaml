@@ -109,7 +109,6 @@ definitions:
           type: string
         type: array
     type: object
-host: localhost:8050
 info:
   contact: {}
   description: API Server for Mobile Application "Meetuper"

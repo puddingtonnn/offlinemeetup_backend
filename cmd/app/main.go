@@ -20,7 +20,6 @@ import (
 // @version         1.0
 // @description     API Server for Mobile Application "Meetuper"
 
-// @host            localhost:8050
 // @BasePath        /
 
 // @securityDefinitions.apikey  BearerAuth
