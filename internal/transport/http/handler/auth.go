@@ -90,6 +90,7 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.service.LoginTelegram(r.Context(), q)
 	if err != nil {
+		fmt.Printf("LOGIN ERROR: %v\n", err)
 		redirectError := fmt.Sprintf("meetuper://auth/error?message=%s", "auth_failed")
 		http.Redirect(w, r, redirectError, http.StatusNotFound)
 		return
