@@ -89,29 +89,7 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := strconv.ParseInt(q.Get("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid ID format", http.StatusBadRequest)
-		return
-	}
-
-	authDate, err := strconv.ParseInt(q.Get("auth_date"), 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid auth_date format", http.StatusBadRequest)
-		return
-	}
-
-	req := service.TelegramAuthData{
-		ID:        id,
-		FirstName: q.Get("first_name"),
-		LastName:  q.Get("last_name"),
-		Username:  q.Get("username"),
-		PhotoURL:  q.Get("photo_url"),
-		AuthDate:  authDate,
-		Hash:      q.Get("hash"),
-	}
-
-	token, err := h.service.LoginTelegram(r.Context(), req)
+	token, err := h.service.LoginTelegram(r.Context(), q)
 	if err != nil {
 		redirectError := fmt.Sprintf("meetuper://auth/error?message=%s", "auth_failed")
 		http.Redirect(w, r, redirectError, http.StatusNotFound)

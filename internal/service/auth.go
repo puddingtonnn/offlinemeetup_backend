@@ -12,6 +12,7 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"google.golang.org/api/idtoken"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -51,32 +52,27 @@ type TelegramAuthData struct {
 	Hash      string `json:"hash"`
 }
 
-func (s *AuthService) LoginTelegram(ctx context.Context, data TelegramAuthData) (string, error) {
-	if time.Now().Unix()-data.AuthDate > 86400 {
-		return "", errors.New("telegram auth data is expired")
-	}
+func (s *AuthService) LoginTelegram(ctx context.Context, params url.Values) (string, error) {
 
-	if !s.validateTelegramHash(data) {
+	if !s.validateTelegramHash(params) {
 		return "", errors.New("invalid telegram hash")
 	}
 
-	socialID := fmt.Sprintf("%d", data.ID)
+	socialID := params.Get("id")
 	return s.findOrCreateUser(ctx, "telegram", socialID, "")
 }
 
-func (s *AuthService) validateTelegramHash(data TelegramAuthData) bool {
+func (s *AuthService) validateTelegramHash(params url.Values) bool {
+	dataCheck := url.Values{}
+	for k, v := range params {
+		if k != "hash" {
+			dataCheck[k] = v
+		}
+	}
+
 	var parts []string
-	parts = append(parts, fmt.Sprintf("auth_date=%d", data.AuthDate))
-	parts = append(parts, fmt.Sprintf("first_name=%s", data.FirstName))
-	parts = append(parts, fmt.Sprintf("id=%d", data.ID))
-	if data.LastName != "" {
-		parts = append(parts, fmt.Sprintf("last_name=%s", data.LastName))
-	}
-	if data.PhotoURL != "" {
-		parts = append(parts, fmt.Sprintf("photo_url=%s", data.PhotoURL))
-	}
-	if data.Username != "" {
-		parts = append(parts, fmt.Sprintf("username=%s", data.Username))
+	for k := range dataCheck {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, dataCheck.Get(k)))
 	}
 
 	sort.Strings(parts)
@@ -91,7 +87,7 @@ func (s *AuthService) validateTelegramHash(data TelegramAuthData) bool {
 	hmacHash.Write([]byte(dataCheckString))
 	calculatedHash := hex.EncodeToString(hmacHash.Sum(nil))
 
-	return calculatedHash == data.Hash
+	return calculatedHash == params.Get("hash")
 }
 
 func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, socialID string, email string) (string, error) {
