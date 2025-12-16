@@ -63,20 +63,26 @@ func (s *AuthService) LoginTelegram(ctx context.Context, params url.Values) (str
 }
 
 func (s *AuthService) validateTelegramHash(params url.Values) bool {
-	dataCheck := url.Values{}
-	for k, v := range params {
-		if k != "hash" {
-			dataCheck[k] = v
-		}
+	receivedHash := params.Get("hash")
+	if receivedHash == "" {
+		fmt.Println("DEBUG: No hash found in params")
+		return false
 	}
+
+	var keys []string
+	for k := range params {
+		if k == "hash" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
 
 	var parts []string
-	for k := range dataCheck {
-		parts = append(parts, fmt.Sprintf("%s=%s", k, dataCheck.Get(k)))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, params.Get(k)))
 	}
-
-	sort.Strings(parts)
-
 	dataCheckString := strings.Join(parts, "\n")
 
 	sha256hash := sha256.New()
@@ -87,7 +93,13 @@ func (s *AuthService) validateTelegramHash(params url.Values) bool {
 	hmacHash.Write([]byte(dataCheckString))
 	calculatedHash := hex.EncodeToString(hmacHash.Sum(nil))
 
-	return calculatedHash == params.Get("hash")
+	fmt.Println("----- TELEGRAM AUTH DEBUG -----")
+	fmt.Printf("Bot Token (len=%d): %s...\n", len(s.cfg.TelegramBotToken), s.cfg.TelegramBotToken[:5])
+	fmt.Printf("Data String:\n%s\n", dataCheckString)
+	fmt.Printf("Calculated: %s\n", calculatedHash)
+	fmt.Printf("Received:   %s\n", receivedHash)
+
+	return calculatedHash == receivedHash
 }
 
 func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, socialID string, email string) (string, error) {
