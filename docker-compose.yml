@@ -31,6 +31,7 @@ services:
 
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=web"
       - "traefik.http.routers.meetuper.rule=Host(`meetuper.site`)"
       - "traefik.http.routers.meetuper.entrypoints=websecure"
       - "traefik.http.routers.meetuper.tls.certresolver=myresolver"
@@ -50,6 +51,7 @@ services:
       - web
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=web"
       - "traefik.http.routers.cloudbeaver.rule=Host(`db.meetuper.site`)"
       - "traefik.http.routers.cloudbeaver.entrypoints=websecure"
       - "traefik.http.routers.cloudbeaver.tls.certresolver=myresolver"
