@@ -17,9 +17,9 @@ func New(dsn string) (*bun.DB, error) {
 
 	db.RegisterModel(
 		(*domain.User)(nil),
-		(*domain.Profile)(nil),
 		(*domain.Tag)(nil),
 		(*domain.ProfileTag)(nil),
+		(*domain.Profile)(nil),
 		(*domain.SocialAccount)(nil),
 		(*domain.Event)(nil),
 	)
