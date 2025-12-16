@@ -39,6 +39,11 @@ func (r *UserRepo) CreateUserWithSocial(ctx context.Context, user *domain.User, 
 
 	defer tx.Rollback()
 
+	_, err = tx.NewInsert().Model(user).Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error inserting user: %w", err)
+	}
+
 	social := &domain.SocialAccount{
 		UserID:   user.ID,
 		Provider: provider,
