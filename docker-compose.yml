@@ -4,8 +4,6 @@ services:
     restart: always
     env_file:
       - .env
-#    ports:
-#      - "5432:5432"
     volumes:
       - ./.data/pg/mount:/var/lib/postgresql/data
     healthcheck:
@@ -17,8 +15,6 @@ services:
   meetuper_redis:
     image: redis:alpine
     restart: always
-#    ports:
-#      - "6379:6379"
 
   meetuper_backend:
     image: ghcr.io/puddingtonnn/offlinemeetup_backend:latest
@@ -28,7 +24,20 @@ services:
         condition: service_healthy
       meetuper_redis:
         condition: service_started
-    ports:
-      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
     env_file:
       - .env
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.meetuper.rule=Host(`meetuper.site`)"
+      - "traefik.http.routers.meetuper.entrypoints=websecure"
+      - "traefik.http.routers.meetuper.tls.certresolver=myresolver"
+      - "traefik.http.services.meetuper.loadbalancer.server.port=9090"
+
+    networks:
+      - default
+      - web
+
+networks:
+  web:
+    external: true
