@@ -50,10 +50,10 @@ services:
       - web
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.pgadmin.rule=Host(`db.meetuper.site`)"
-      - "traefik.http.routers.pgadmin.entrypoints=websecure"
-      - "traefik.http.routers.pgadmin.tls.certresolver=myresolver"
-      - "traefik.http.services.pgadmin.loadbalancer.server.port=8978"
+      - "traefik.http.routers.cloudbeaver.rule=Host(`db.meetuper.site`)"
+      - "traefik.http.routers.cloudbeaver.entrypoints=websecure"
+      - "traefik.http.routers.cloudbeaver.tls.certresolver=myresolver"
+      - "traefik.http.services.cloudbeaver.loadbalancer.server.port=8978"
 
 networks:
   web:
