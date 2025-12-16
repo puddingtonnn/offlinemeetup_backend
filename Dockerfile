@@ -19,6 +19,6 @@ RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /app/meetuper .
 
-EXPOSE 8080
+EXPOSE 9090
 
 CMD ["./meetuper"]

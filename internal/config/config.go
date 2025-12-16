@@ -26,7 +26,7 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.AppPort == "" {
-		cfg.AppPort = "8080"
+		cfg.AppPort = "9090"
 	}
 
 	if cfg.DBDSN == "" {
