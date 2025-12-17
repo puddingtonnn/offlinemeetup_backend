@@ -196,6 +196,26 @@ const docTemplate = `{
                 "summary": "Callback для виджета Telegram",
                 "responses": {}
             }
+        },
+        "/auth/telegram/login": {
+            "get": {
+                "description": "Возвращает HTML-страницу с Telegram Login Widget для авторизации пользователя через Telegram",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Вход через Telegram",
+                "responses": {
+                    "200": {
+                        "description": "HTML page with Telegram login widget",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -216,12 +236,6 @@ const docTemplate = `{
                 },
                 "nickname": {
                     "type": "string"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/domain.Tag"
-                    }
                 },
                 "updated_at": {
                     "type": "string"
@@ -291,6 +305,12 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/domain.UserStatus"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Tag"
+                    }
                 },
                 "updated_at": {
                     "type": "string"

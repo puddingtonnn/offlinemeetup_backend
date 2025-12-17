@@ -2,6 +2,13 @@ package handler
 
 import "net/http"
 
+// ServeTelegramLoginPage
+// @Summary      Вход через Telegram
+// @Description  Возвращает HTML-страницу с Telegram Login Widget для авторизации пользователя через Telegram
+// @Tags         Auth
+// @Produce      html
+// @Success      200 {string} string "HTML page with Telegram login widget"
+// @Router       /auth/telegram/login [get]
 func (h *AuthHandler) ServeTelegramLoginPage(w http.ResponseWriter, r *http.Request) {
 	html := `
     <!DOCTYPE html>
