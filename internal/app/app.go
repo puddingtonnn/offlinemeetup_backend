@@ -29,7 +29,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	profileRepo := repo.NewProfileRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
-	profileService := service.NewProfileService(profileRepo)
+	profileService := service.NewProfileService(profileRepo, userRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
 	profileHandler := handler.NewProfileHandler(profileService)

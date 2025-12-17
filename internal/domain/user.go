@@ -15,7 +15,7 @@ type User struct {
 	UpdatedAt     time.Time        `bun:",nullzero,notnull,default:current_timestamp" json:"updated_at"`
 	Socials       []*SocialAccount `bun:"rel:has-many,join:id=user_id" json:"socials,omitempty"`
 
-	Tags []*Tag `bun:"rel:m2m:user_tags,join:user_id=tag_id" json:"tags"`
+	Tags []*Tag `bun:"m2m:user_tags,join:User=User,join:Tag=Tag" json:"tags"`
 }
 
 type SocialAccount struct {

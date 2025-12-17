@@ -35,7 +35,7 @@ CREATE TABLE tags (
 );
 
 CREATE TABLE user_tags (
-                              user_id BIGINT REFERENCES user(id) ON DELETE CASCADE,
+                              user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                               tag_id BIGINT REFERENCES tags(id) ON DELETE CASCADE,
                               PRIMARY KEY (user_id, tag_id)
 );
@@ -58,7 +58,7 @@ CREATE INDEX idx_events_location ON events USING GIST (location);
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS events;
-DROP TABLE IF EXISTS profile_tags;
+DROP TABLE IF EXISTS user_tags;
 DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS profile;
 DROP TABLE IF EXISTS social_accounts;

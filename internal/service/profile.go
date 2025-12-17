@@ -8,15 +8,16 @@ import (
 )
 
 type ProfileService struct {
-	repo *repo.ProfileRepo
+	profileRepo *repo.ProfileRepo
+	userRepo    *repo.UserRepo
 }
 
-func NewProfileService(repo *repo.ProfileRepo) *ProfileService {
-	return &ProfileService{repo: repo}
+func NewProfileService(profileRepo *repo.ProfileRepo, userRepo *repo.UserRepo) *ProfileService {
+	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo}
 }
 
 func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*domain.Profile, error) {
-	return s.repo.GetByUserID(ctx, userID)
+	return s.profileRepo.GetByUserID(ctx, userID)
 }
 
 type UpdateProfileInput struct {
@@ -34,9 +35,16 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, input 
 		AvatarURL: input.AvatarURL,
 	}
 
-	if _, err := s.repo.UpdateProfile(ctx, profile); err != nil {
+	updatedProfile, err := s.profileRepo.UpdateProfile(ctx, profile)
+	if err != nil {
 		return nil, fmt.Errorf("updating profile error: %w", err)
 	}
 
-	return s.repo.GetByUserID(ctx, userID)
+	if input.Tags != nil {
+		if err := s.userRepo.UpdateTags(ctx, userID, input.Tags); err != nil {
+			return nil, fmt.Errorf("updating tags error: %w", err)
+		}
+	}
+
+	return updatedProfile, nil
 }

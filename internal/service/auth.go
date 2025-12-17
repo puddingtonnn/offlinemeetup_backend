@@ -93,12 +93,6 @@ func (s *AuthService) validateTelegramHash(params url.Values) bool {
 	hmacHash.Write([]byte(dataCheckString))
 	calculatedHash := hex.EncodeToString(hmacHash.Sum(nil))
 
-	fmt.Println("----- TELEGRAM AUTH DEBUG -----")
-	fmt.Printf("Bot Token (len=%d): %s...\n", len(s.cfg.TelegramBotToken), s.cfg.TelegramBotToken[:5])
-	fmt.Printf("Data String:\n%s\n", dataCheckString)
-	fmt.Printf("Calculated: %s\n", calculatedHash)
-	fmt.Printf("Received:   %s\n", receivedHash)
-
 	return calculatedHash == receivedHash
 }
 
