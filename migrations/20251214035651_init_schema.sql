@@ -34,10 +34,10 @@ CREATE TABLE tags (
                       name VARCHAR UNIQUE NOT NULL
 );
 
-CREATE TABLE profile_tags (
-                              profile_id BIGINT REFERENCES profile(id) ON DELETE CASCADE,
+CREATE TABLE user_tags (
+                              user_id BIGINT REFERENCES user(id) ON DELETE CASCADE,
                               tag_id BIGINT REFERENCES tags(id) ON DELETE CASCADE,
-                              PRIMARY KEY (profile_id, tag_id)
+                              PRIMARY KEY (user_id, tag_id)
 );
 
 CREATE TABLE events (
