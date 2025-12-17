@@ -16,6 +16,5 @@ type Profile struct {
 	IsOrganizer bool      `bun:",notnull,default:False" json:"is_organizer"`
 	UpdatedAt   time.Time `bun:",nullzero,notnull,default:current_timestamp" json:"updated_at"`
 
-	User *User  `bun:"rel:belongs-to,join:user_id=id"`
-	Tags []*Tag `bun:"rel:m2m:profile_tags,join:Profile=Tag" json:"tags"`
+	User *User `bun:"rel:belongs-to,join:user_id=id"`
 }

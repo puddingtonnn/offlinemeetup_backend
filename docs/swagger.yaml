@@ -12,10 +12,6 @@ definitions:
         type: boolean
       nickname:
         type: string
-      tags:
-        items:
-          $ref: '#/definitions/domain.Tag'
-        type: array
       updated_at:
         type: string
       user:
@@ -61,6 +57,10 @@ definitions:
         type: array
       status:
         $ref: '#/definitions/domain.UserStatus'
+      tags:
+        items:
+          $ref: '#/definitions/domain.Tag'
+        type: array
       updated_at:
         type: string
     type: object
@@ -214,6 +214,20 @@ paths:
         в приложение с токеном.
       responses: {}
       summary: Callback для виджета Telegram
+      tags:
+      - Auth
+  /auth/telegram/login:
+    get:
+      description: Возвращает HTML-страницу с Telegram Login Widget для авторизации
+        пользователя через Telegram
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: HTML page with Telegram login widget
+          schema:
+            type: string
+      summary: Вход через Telegram
       tags:
       - Auth
 securityDefinitions:

@@ -9,12 +9,12 @@ type Tag struct {
 	Name string `bun:",unique,notnull" json:"name"`
 }
 
-type ProfileTag struct {
-	bun.BaseModel `bun:"table:profile_tags" swaggerignore:"true"`
+type UserTag struct {
+	bun.BaseModel `bun:"table:user_tags" swaggerignore:"true"`
 
-	ProfileID int64 `bun:",pk" json:"profile_id"`
-	TagID     int64 `bun:",pk" json:"tag_id"`
+	UserID int64 `bun:",pk" json:"user_id"`
+	TagID  int64 `bun:",pk" json:"tag_id"`
 
-	Profile *Profile `bun:"rel:belongs-to,join:profile_id=id"`
-	Tag     *Tag     `bun:"rel:belongs-to,join:tag_id=id"`
+	User *User `bun:"rel:belongs-to,join:user_id=id"`
+	Tag  *Tag  `bun:"rel:belongs-to,join:tag_id=id"`
 }
