@@ -33,13 +33,9 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, input 
 		Bio:       input.Bio,
 		AvatarURL: input.AvatarURL,
 	}
-	savedProfile, err := s.repo.UpdateProfile(ctx, profile)
-	if err != nil {
-		return nil, fmt.Errorf("updating profile error: %w", err)
-	}
 
-	if err := s.repo.UpdateTags(ctx, savedProfile.ID, input.Tags); err != nil {
-		return nil, fmt.Errorf("updating tags error: %w", err)
+	if _, err := s.repo.UpdateProfile(ctx, profile); err != nil {
+		return nil, fmt.Errorf("updating profile error: %w", err)
 	}
 
 	return s.repo.GetByUserID(ctx, userID)
