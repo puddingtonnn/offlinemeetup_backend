@@ -16,12 +16,7 @@ func New(dsn string) (*bun.DB, error) {
 	db := bun.NewDB(sqldb, pgdialect.New())
 
 	db.RegisterModel(
-		(*domain.User)(nil),
-		(*domain.Tag)(nil),
 		(*domain.UserTag)(nil),
-		(*domain.Profile)(nil),
-		(*domain.SocialAccount)(nil),
-		(*domain.Event)(nil),
 	)
 
 	if err := db.Ping(); err != nil {
