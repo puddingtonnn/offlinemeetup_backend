@@ -11,9 +11,9 @@ type UserService struct {
 	profileRepo *repo.ProfileRepo
 }
 
-func NewUserService(userRepo *repo.UserRepo, profileRepo *repo.ProfileRepo) *UserService {
-	return &UserService{userRepo: userRepo, profileRepo: profileRepo}
-}
+//func NewUserService(userRepo *repo.UserRepo, profileRepo *repo.ProfileRepo) *UserService {
+//	return &UserService{userRepo: userRepo, profileRepo: profileRepo}
+//}
 
 func (s *UserService) GetUser(ctx context.Context, userID int64) (*domain.User, error) {
 	return s.userRepo.GetByID(ctx, userID)
