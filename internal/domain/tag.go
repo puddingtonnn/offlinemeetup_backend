@@ -15,6 +15,6 @@ type UserTag struct {
 	UserID int64 `bun:",pk" json:"user_id"`
 	TagID  int64 `bun:",pk" json:"tag_id"`
 
-	User *User `bun:"rel:belongs-to,join:user_id=id"`
-	Tag  *Tag  `bun:"rel:belongs-to,join:tag_id=id"`
+	User *User `bun:"rel:belongs-to,join:user_id=id" json:"-"`
+	Tag  *Tag  `bun:"rel:belongs-to,join:tag_id=id" json:"-"`
 }
