@@ -2,13 +2,45 @@ services:
   meetuper_db:
     image: postgis/postgis:16-3.4-alpine
     restart: always
-    ports:
-      - "5432:5432"
     env_file:
       - .env
     volumes:
       - ./.data/pg/mount:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
 
-  redis:
+  meetuper_redis:
     image: redis:alpine
     restart: always
+    ports:
+      - "6379:6379"
+
+  meetuper_backend:
+    build: .
+    restart: always
+    depends_on:
+      meetuper_db:
+        condition: service_healthy
+      meetuper_redis:
+        condition: service_started
+    env_file:
+      - .env
+    ports:
+      - "9090:9090"
+
+  meetuper_dbeaver:
+    image: dbeaver/cloudbeaver:latest
+    restart: always
+    volumes:
+      - ./.data/cloudbeaver:/opt/cloudbeaver/workspace
+
+    ports:
+      - "8978:8978"
+
+networks:
+  default:
