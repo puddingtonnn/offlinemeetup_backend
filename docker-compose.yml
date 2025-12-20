@@ -19,7 +19,7 @@ services:
     restart: always
 
   meetuper_backend:
-    image: ghcr.io/puddingtonnn/offlinemeetup_backend:latest
+    image: puddington/meetuper:latest
     restart: always
     depends_on:
       meetuper_db:
