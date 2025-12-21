@@ -37,7 +37,7 @@ jobs:
           port: 2222
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "docker-compose.yml"
-          target: "/root/my-go-app/"
+          target: "my-go-app"
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -49,7 +49,7 @@ jobs:
           script: |
             echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USER }} --password-stdin
             
-            cd /root/my-go-app
+            cd my-go-app
             
             docker compose pull meetuper_backend
             
