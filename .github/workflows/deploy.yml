@@ -34,6 +34,7 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
+          port: 2222
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "docker-compose.yml"
           target: "/root/my-go-app/"
@@ -43,9 +44,10 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
+          port: 2222
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            echo ${{ secrets.DOCKERHUB_TOKEN }}} | docker login -u ${{ secrets.DOCKERHUB_USER }} --password-stdin
+            echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USER }} --password-stdin
             
             cd /root/my-go-app
             
