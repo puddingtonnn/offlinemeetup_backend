@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
-	"github.com/puddingtonnn/offlinemeetup_backend/migrations"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/migrations"
 
 	"github.com/pressly/goose/v3"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/app"

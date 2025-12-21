@@ -1,8 +1,9 @@
 package http
 
 import (
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"net/http"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -35,8 +36,8 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 		r.Use(authMiddleware.AuthMiddleware(cfg))
 		r.Get("/auth/me", authHandler.Me)
 
-		r.Get("/api/profile", profileHandler.GetMyProfile)
-		r.Put("/api/profile", profileHandler.UpdateMyProfile)
+		r.Get("/profile", profileHandler.GetMyProfile)
+		r.Put("/profile", profileHandler.UpdateMyProfile)
 	})
 
 	router.Get("/swagger/*", httpSwagger.Handler(
