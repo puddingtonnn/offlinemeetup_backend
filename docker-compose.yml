@@ -32,7 +32,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=web"
-      - "traefik.http.routers.meetuper.rule=Host(`meetuper.site`)"
+      - "traefik.http.routers.meetuper.rule=Host(`api.meetuper.site`)"
       - "traefik.http.routers.meetuper.entrypoints=websecure"
       - "traefik.http.routers.meetuper.tls.certresolver=myresolver"
       - "traefik.http.services.meetuper.loadbalancer.server.port=9090"
