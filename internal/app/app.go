@@ -27,14 +27,17 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
 	userRepo := repo.NewUserRepo(db)
 	profileRepo := repo.NewProfileRepo(db)
+	meetupRepo := repo.NewMeetupRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	profileService := service.NewProfileService(profileRepo, userRepo)
+	meetupService := service.NewMeetupService(meetupRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
 	profileHandler := handler.NewProfileHandler(profileService)
+	meetupHandler := handler.NewMeetupHandler(meetupService)
 
-	router := transport.NewRouter(authHandler, profileHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, cfg)
 
 	return &App{
 		cfg:    cfg,

@@ -14,66 +14,71 @@ definitions:
         type: string
       updated_at:
         type: string
-      user:
-        $ref: '#/definitions/domain.User'
       user_id:
         type: integer
     type: object
-  domain.SocialAccount:
+  dto.Coordinates:
     properties:
-      created_at:
+      lat:
+        type: number
+      lng:
+        type: number
+    type: object
+  dto.CreateMeetupRequest:
+    properties:
+      address:
+        type: string
+      coordinates:
+        allOf:
+        - $ref: '#/definitions/dto.Coordinates'
+        description: Вложенный JSON
+      description:
+        type: string
+      end_time:
+        type: string
+      is_public:
+        type: boolean
+      start_time:
+        type: string
+      title:
+        type: string
+    type: object
+  dto.MeetupResponse:
+    properties:
+      address:
+        type: string
+      coordinates:
+        $ref: '#/definitions/dto.Coordinates'
+      creator_id:
+        type: integer
+      description:
+        type: string
+      end_time:
         type: string
       id:
         type: integer
-      provider:
+      start_time:
         type: string
-      social_id:
+      title:
         type: string
-      user:
-        $ref: '#/definitions/domain.User'
-      user_id:
-        type: integer
     type: object
-  domain.Tag:
+  dto.UpdateMeetupRequest:
     properties:
-      id:
-        type: integer
-      name:
+      address:
+        type: string
+      coordinates:
+        $ref: '#/definitions/dto.Coordinates'
+      description:
+        type: string
+      end_time:
+        type: string
+      is_public:
+        type: boolean
+      start_time:
+        type: string
+      title:
         type: string
     type: object
-  domain.User:
-    properties:
-      created_at:
-        type: string
-      email:
-        type: string
-      id:
-        type: integer
-      role:
-        type: string
-      socials:
-        items:
-          $ref: '#/definitions/domain.SocialAccount'
-        type: array
-      status:
-        $ref: '#/definitions/domain.UserStatus'
-      tags:
-        items:
-          $ref: '#/definitions/domain.Tag'
-        type: array
-      updated_at:
-        type: string
-    type: object
-  domain.UserStatus:
-    enum:
-    - active
-    - inactive
-    - banned
-    type: string
-    x-enum-varnames:
-    - UserStatusActive
-    - UserStatusInactive
-    - UserStatusBanned
   handler.googleLoginRequest:
     properties:
       token:
@@ -98,6 +103,184 @@ info:
   title: Offline Meetup API
   version: "1.0"
 paths:
+  /api/meetups:
+    get:
+      description: Возвращает список митапов. Если переданы lat/lng/radius — ищет
+        ближайшие. Иначе сортирует по времени.
+      parameters:
+      - description: Широта (Latitude)
+        in: query
+        name: lat
+        type: number
+      - description: Долгота (Longitude)
+        in: query
+        name: lng
+        type: number
+      - description: Радиус поиска (в метрах)
+        in: query
+        name: radius
+        type: integer
+      - description: 'Лимит записей (default: 20)'
+        in: query
+        name: limit
+        type: integer
+      - description: Смещение (pagination)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.MeetupResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Поиск и список митапов
+      tags:
+      - Meetups
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Данные митапа
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateMeetupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Error
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Создать митап
+      tags:
+      - Meetups
+  /api/meetups/{id}:
+    delete:
+      description: Удаляет митап (Soft Delete). Требует прав создателя (owner).
+      parameters:
+      - description: Meetup ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Invalid ID
+          schema:
+            type: string
+        "403":
+          description: 'Forbidden: You are not the owner'
+          schema:
+            type: string
+        "404":
+          description: Meetup not found
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Удалить митап
+      tags:
+      - Meetups
+    get:
+      description: Возвращает детальную информацию о митапе.
+      parameters:
+      - description: Meetup ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MeetupResponse'
+        "400":
+          description: Invalid ID
+          schema:
+            type: string
+        "404":
+          description: Meetup not found
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Получить митап по ID
+      tags:
+      - Meetups
+    put:
+      consumes:
+      - application/json
+      description: Частичное обновление полей митапа. Требует прав создателя (owner).
+      parameters:
+      - description: Meetup ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Поля для обновления (nil поля игнорируются)
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateMeetupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MeetupResponse'
+        "400":
+          description: Invalid input
+          schema:
+            type: string
+        "403":
+          description: 'Forbidden: You are not the owner'
+          schema:
+            type: string
+        "404":
+          description: Meetup not found
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Обновить митап
+      tags:
+      - Meetups
   /api/profile:
     get:
       description: Возвращает профиль текущего авторизованного пользователя. ID берется

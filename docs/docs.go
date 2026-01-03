@@ -15,6 +15,284 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/meetups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает список митапов. Если переданы lat/lng/radius — ищет ближайшие. Иначе сортирует по времени.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Поиск и список митапов",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "description": "Широта (Latitude)",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Долгота (Longitude)",
+                        "name": "lng",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Радиус поиска (в метрах)",
+                        "name": "radius",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Лимит записей (default: 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (pagination)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.MeetupResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Создать митап",
+                "parameters": [
+                    {
+                        "description": "Данные митапа",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateMeetupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "400": {
+                        "description": "Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/meetups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает детальную информацию о митапе.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Получить митап по ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Meetup ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MeetupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid ID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Meetup not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Частичное обновление полей митапа. Требует прав создателя (owner).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Обновить митап",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Meetup ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Поля для обновления (nil поля игнорируются)",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateMeetupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MeetupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden: You are not the owner",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Meetup not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Удаляет митап (Soft Delete). Требует прав создателя (owner).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Удалить митап",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Meetup ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Invalid ID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden: You are not the owner",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Meetup not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/profile": {
             "get": {
                 "security": [
@@ -240,95 +518,107 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string"
                 },
-                "user": {
-                    "$ref": "#/definitions/domain.User"
-                },
                 "user_id": {
                     "type": "integer"
                 }
             }
         },
-        "domain.SocialAccount": {
+        "dto.Coordinates": {
             "type": "object",
             "properties": {
-                "created_at": {
+                "lat": {
+                    "type": "number"
+                },
+                "lng": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.CreateMeetupRequest": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "coordinates": {
+                    "description": "Вложенный JSON",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.Coordinates"
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "is_public": {
+                    "type": "boolean"
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.MeetupResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "coordinates": {
+                    "$ref": "#/definitions/dto.Coordinates"
+                },
+                "creator_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_time": {
                     "type": "string"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "provider": {
+                "start_time": {
                     "type": "string"
                 },
-                "social_id": {
+                "title": {
                     "type": "string"
-                },
-                "user": {
-                    "$ref": "#/definitions/domain.User"
-                },
-                "user_id": {
-                    "type": "integer"
                 }
             }
         },
-        "domain.Tag": {
+        "dto.UpdateMeetupRequest": {
             "type": "object",
             "properties": {
-                "id": {
-                    "type": "integer"
+                "address": {
+                    "type": "string"
                 },
-                "name": {
+                "coordinates": {
+                    "$ref": "#/definitions/dto.Coordinates"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "is_public": {
+                    "type": "boolean"
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "title": {
                     "type": "string"
                 }
             }
-        },
-        "domain.User": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "role": {
-                    "type": "string"
-                },
-                "socials": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/domain.SocialAccount"
-                    }
-                },
-                "status": {
-                    "$ref": "#/definitions/domain.UserStatus"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/domain.Tag"
-                    }
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "domain.UserStatus": {
-            "type": "string",
-            "enum": [
-                "active",
-                "inactive",
-                "banned"
-            ],
-            "x-enum-varnames": [
-                "UserStatusActive",
-                "UserStatusInactive",
-                "UserStatusBanned"
-            ]
         },
         "handler.googleLoginRequest": {
             "type": "object",

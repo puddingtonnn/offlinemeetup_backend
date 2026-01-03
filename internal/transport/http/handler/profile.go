@@ -27,7 +27,7 @@ func NewProfileHandler(service *service.ProfileService) *ProfileHandler {
 // @Failure      404  {string}  string "Profile not found"
 // @Failure      500  {string}  string "Internal Server Error"
 // @Security     ApiKeyAuth
-// @Router       /api/profile [get]
+// @Router       /v1/profile [get]
 func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -62,7 +62,7 @@ func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 // @Failure      401  {string}  string "Unauthorized"
 // @Failure      500  {string}  string "Internal Server Error"
 // @Security     ApiKeyAuth
-// @Router       /api/profile [put]
+// @Router       /v1/profile [put]
 func (h *ProfileHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
