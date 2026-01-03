@@ -20,7 +20,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		AppPort:          os.Getenv("APP_PORT"),
 		DBDSN:            os.Getenv("DB_DSN"),
-		GoogleClientID:   os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientID:   os.Getenv("GOOGLE_WEB_CLIENT_ID"),
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 		JWTSecret:        os.Getenv("JWT_SECRET_KEY"),
 	}
@@ -33,7 +33,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("DB_DSN is not set")
 	}
 	if cfg.GoogleClientID == "" {
-		fmt.Println("WARNING: GOOGLE_CLIENT_ID is not set")
+		fmt.Println("WARNING: GOOGLE_WEB_CLIENT_ID is not set")
 	}
 	if cfg.TelegramBotToken == "" {
 		fmt.Println("WARNING: TELEGRAM_BOT_TOKEN is not set")

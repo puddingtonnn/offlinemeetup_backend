@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -42,6 +43,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.service.LoginGoogle(r.Context(), req.Token)
 	if err != nil {
+		log.Printf("Error logging in: %v", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}

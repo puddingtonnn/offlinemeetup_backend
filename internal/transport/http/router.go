@@ -13,7 +13,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
-func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, cfg *config.Config) *chi.Mux {
+func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, meetupHandler *handler.MeetupHandler, cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
@@ -38,6 +38,13 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 
 		r.Get("/profile", profileHandler.GetMyProfile)
 		r.Put("/profile", profileHandler.UpdateMyProfile)
+		r.Route("/meetups", func(r chi.Router) {
+			r.Post("/", meetupHandler.CreateMeetup)
+			r.Get("/", meetupHandler.List)
+			r.Get("/{id}", meetupHandler.GetByID)
+			r.Put("/{id}", meetupHandler.Update)
+			r.Delete("/{id}", meetupHandler.Delete)
+		})
 	})
 
 	router.Get("/swagger/*", httpSwagger.Handler(
