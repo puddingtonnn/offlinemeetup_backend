@@ -28,7 +28,7 @@ func NewMeetupHandler(service *service.MeetupService) *MeetupHandler {
 // @Param input body dto.CreateMeetupRequest true "Данные митапа"
 // @Success 201
 // @Failure 400 {string} string "Error"
-// @Router /api/meetups [post]
+// @Router /v1/meetups [post]
 func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -64,7 +64,7 @@ func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 // @Failure     400  {string}  string  "Invalid ID"
 // @Failure     404  {string}  string  "Meetup not found"
 // @Failure     500  {string}  string  "Internal Server Error"
-// @Router      /api/meetups/{id} [get]
+// @Router      /v1/meetups/{id} [get]
 func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
@@ -95,7 +95,7 @@ func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 // @Param       offset  query     int     false  "Смещение (pagination)"
 // @Success     200     {array}   dto.MeetupResponse
 // @Failure     500     {string}  string  "Internal Server Error"
-// @Router      /api/meetups [get]
+// @Router      /v1/meetups [get]
 func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
@@ -136,7 +136,7 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure     403    {string}  string  "Forbidden: You are not the owner"
 // @Failure     404    {string}  string  "Meetup not found"
 // @Failure     500    {string}  string  "Internal Server Error"
-// @Router      /api/meetups/{id} [put]
+// @Router      /v1/meetups/{id} [put]
 func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -182,7 +182,7 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Failure     403  {string}  string  "Forbidden: You are not the owner"
 // @Failure     404  {string}  string  "Meetup not found"
 // @Failure     500  {string}  string  "Internal Server Error"
-// @Router      /api/meetups/{id} [delete]
+// @Router      /v1/meetups/{id} [delete]
 func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {

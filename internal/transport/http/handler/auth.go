@@ -110,7 +110,7 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Success      200  {string}  string "Приветствие с ID"
 // @Failure      401  {string}  string "Пользователь не авторизован"
-// @Router       /auth/me [get]
+// @Router       /v1/auth/me [get]
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -118,4 +118,31 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte(fmt.Sprintf("Your user ID is: %d", userID)))
+}
+
+type devLoginRequest struct {
+	Email string `json:"email"`
+}
+
+func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
+	var req devLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if req.Email == "" {
+		req.Email = "test@example.com" // Дефолтный тестовый юзер
+	}
+
+	token, err := h.service.CreateDevToken(r.Context(), req.Email)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"token": token,
+		"note":  "THIS IS A DEV TOKEN! DO NOT USE IN PRODUCTION",
+	})
 }

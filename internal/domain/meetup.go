@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 	"time"
 )
@@ -11,8 +12,11 @@ type Meetup struct {
 	ID          int64  `bun:",pk,autoincrement"`
 	Title       string `bun:",notnull"`
 	Description string `bun:""`
-	IsPublic    bool   `bun:",notnull"`
-	CreatorID   int64  `bun:",notnull"`
+
+	CoverFileID uuid.NullUUID `bun:"type:uuid"`
+
+	IsPublic  bool  `bun:",notnull"`
+	CreatorID int64 `bun:",notnull"`
 
 	StartTime time.Time `bun:",notnull"`
 	EndTime   time.Time `bun:",notnull"`

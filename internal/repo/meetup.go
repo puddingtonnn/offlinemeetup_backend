@@ -17,7 +17,7 @@ func NewMeetupRepo(db *bun.DB) *MeetupRepo {
 }
 
 func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup) (*domain.Meetup, error) {
-	_, err := r.db.NewInsert().Model(meetup).Exec(ctx)
+	_, err := r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location).Returning("*, ST_AsText(location) AS location").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
 	}
@@ -31,8 +31,9 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, err
 	// Bun автоматически замапит результат колонки location в поле Location struct
 	err := r.db.NewSelect().
 		Model(&meetup).
-		ColumnExpr("*, ST_AsText(location) as location").
-		Where("id = ?", id).
+		Relation("Creator").
+		ColumnExpr("meetup.*, ST_AsText(meetup.location) AS location").
+		Where("meetup.id = ?", id).
 		Scan(ctx)
 
 	if err != nil {
@@ -46,7 +47,8 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 
 	q := r.db.NewSelect().
 		Model(&meetups).
-		Relation("Creator")
+		Relation("Creator").
+		ColumnExpr("meetup.*, ST_AsText(meetup.location) AS location")
 
 	if filter.Radius > 0 {
 		q.Where("ST_DWithin(location, ST_MakePoint(?, ?)::geography, ?)",

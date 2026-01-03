@@ -7,6 +7,7 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"strings"
 )
 
 var (
@@ -23,7 +24,7 @@ func NewMeetupService(repo *repo.MeetupRepo) *MeetupService {
 }
 
 func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.CreateMeetupRequest) (*dto.MeetupResponse, error) {
-	wktLocation := fmt.Sprintf("POINT(%f%f)", req.Coordinates.Lng, req.Coordinates.Lat)
+	wktLocation := fmt.Sprintf("POINT(%.6f %.6f)", req.Coordinates.Lng, req.Coordinates.Lat)
 
 	meetup := &domain.Meetup{
 		Title:       req.Title,
@@ -46,7 +47,14 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 	var lat, lng float64
-	fmt.Sscanf(m.Location, "POINT(%f%f)", &lng, &lat)
+
+	fmt.Printf("DEBUG: Parsing location: '%s'\n", m.Location)
+
+	cleanStr := strings.TrimPrefix(m.Location, "POINT(")
+	cleanStr = strings.TrimSuffix(cleanStr, ")")
+
+	fmt.Sscanf(cleanStr, "%f %f", &lng, &lat)
+
 	return &dto.MeetupResponse{
 		ID:          m.ID,
 		Title:       m.Title,

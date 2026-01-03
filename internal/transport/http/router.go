@@ -32,12 +32,20 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 		})
 	})
 
-	router.Group(func(r chi.Router) {
+	if cfg.Env == "local" || cfg.Env == "dev" {
+		router.Post("/auth/dev/login", authHandler.DevLogin)
+	}
+
+	router.Route("/v1", func(r chi.Router) {
 		r.Use(authMiddleware.AuthMiddleware(cfg))
+
 		r.Get("/auth/me", authHandler.Me)
 
-		r.Get("/profile", profileHandler.GetMyProfile)
-		r.Put("/profile", profileHandler.UpdateMyProfile)
+		r.Route("/profile", func(r chi.Router) {
+			r.Get("/", profileHandler.GetMyProfile)
+			r.Put("/", profileHandler.UpdateMyProfile)
+		})
+
 		r.Route("/meetups", func(r chi.Router) {
 			r.Post("/", meetupHandler.CreateMeetup)
 			r.Get("/", meetupHandler.List)

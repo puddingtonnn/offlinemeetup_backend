@@ -126,3 +126,10 @@ func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, soc
 	})
 	return token.SignedString([]byte(s.cfg.JWTSecret))
 }
+
+func (s *AuthService) CreateDevToken(ctx context.Context, email string) (string, error) {
+	dummySocialID := "dev_" + email
+
+	token, err := s.findOrCreateUser(ctx, "dev_local", dummySocialID, email)
+	return token, err
+}

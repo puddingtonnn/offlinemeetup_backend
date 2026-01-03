@@ -12,6 +12,7 @@ type Config struct {
 	GoogleClientID   string
 	TelegramBotToken string
 	JWTSecret        string
+	Env              string
 }
 
 func Load() (*Config, error) {
@@ -23,6 +24,7 @@ func Load() (*Config, error) {
 		GoogleClientID:   os.Getenv("GOOGLE_WEB_CLIENT_ID"),
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 		JWTSecret:        os.Getenv("JWT_SECRET_KEY"),
+		Env:              os.Getenv("APP_ENV"),
 	}
 
 	if cfg.AppPort == "" {
@@ -40,6 +42,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.JWTSecret == "" {
 		fmt.Println("WARNING: JWT_SECRET_KEY is not set")
+	}
+	if cfg.Env == "" {
+		cfg.Env = "local"
 	}
 
 	return cfg, nil
