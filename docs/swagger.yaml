@@ -103,7 +103,76 @@ info:
   title: Offline Meetup API
   version: "1.0"
 paths:
-  /api/meetups:
+  /auth/google:
+    post:
+      consumes:
+      - application/json
+      description: Принимает ID Token от Google SDK, возвращает JWT.
+      parameters:
+      - description: Google ID Token
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/handler.googleLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Error
+          schema:
+            type: string
+      summary: Вход через Google
+      tags:
+      - Auth
+  /auth/telegram/callback:
+    get:
+      description: Принимает GET параметры от Telegram, валидирует, логинит и редиректит
+        в приложение с токеном.
+      responses: {}
+      summary: Callback для виджета Telegram
+      tags:
+      - Auth
+  /auth/telegram/login:
+    get:
+      description: Возвращает HTML-страницу с Telegram Login Widget для авторизации
+        пользователя через Telegram
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: HTML page with Telegram login widget
+          schema:
+            type: string
+      summary: Вход через Telegram
+      tags:
+      - Auth
+  /v1/auth/me:
+    get:
+      description: Возвращает ID текущего пользователя (тест авторизации).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Приветствие с ID
+          schema:
+            type: string
+        "401":
+          description: Пользователь не авторизован
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Получить мой профиль
+      tags:
+      - Auth
+  /v1/meetups:
     get:
       description: Возвращает список митапов. Если переданы lat/lng/radius — ищет
         ближайшие. Иначе сортирует по времени.
@@ -170,7 +239,7 @@ paths:
       summary: Создать митап
       tags:
       - Meetups
-  /api/meetups/{id}:
+  /v1/meetups/{id}:
     delete:
       description: Удаляет митап (Soft Delete). Требует прав создателя (owner).
       parameters:
@@ -281,7 +350,7 @@ paths:
       summary: Обновить митап
       tags:
       - Meetups
-  /api/profile:
+  /v1/profile:
     get:
       description: Возвращает профиль текущего авторизованного пользователя. ID берется
         из JWT токена.
@@ -344,75 +413,6 @@ paths:
       summary: Обновить мой профиль
       tags:
       - Profile
-  /auth/google:
-    post:
-      consumes:
-      - application/json
-      description: Принимает ID Token от Google SDK, возвращает JWT.
-      parameters:
-      - description: Google ID Token
-        in: body
-        name: input
-        required: true
-        schema:
-          $ref: '#/definitions/handler.googleLoginRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Error
-          schema:
-            type: string
-      summary: Вход через Google
-      tags:
-      - Auth
-  /auth/me:
-    get:
-      description: Возвращает ID текущего пользователя (тест авторизации).
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Приветствие с ID
-          schema:
-            type: string
-        "401":
-          description: Пользователь не авторизован
-          schema:
-            type: string
-      security:
-      - BearerAuth: []
-      summary: Получить мой профиль
-      tags:
-      - Auth
-  /auth/telegram/callback:
-    get:
-      description: Принимает GET параметры от Telegram, валидирует, логинит и редиректит
-        в приложение с токеном.
-      responses: {}
-      summary: Callback для виджета Telegram
-      tags:
-      - Auth
-  /auth/telegram/login:
-    get:
-      description: Возвращает HTML-страницу с Telegram Login Widget для авторизации
-        пользователя через Telegram
-      produces:
-      - text/html
-      responses:
-        "200":
-          description: HTML page with Telegram login widget
-          schema:
-            type: string
-      summary: Вход через Telegram
-      tags:
-      - Auth
 securityDefinitions:
   BearerAuth:
     description: 'Введите токен в формате: Bearer <your-token>'
