@@ -40,24 +40,10 @@ CREATE TABLE user_tags (
                               PRIMARY KEY (user_id, tag_id)
 );
 
-CREATE TABLE events (
-                        id BIGSERIAL PRIMARY KEY,
-                        title VARCHAR NOT NULL,
-                        description TEXT,
-                        is_public BOOLEAN NOT NULL DEFAULT TRUE,
-                        created_at TIMESTAMP DEFAULT current_timestamp,
-                        start_time TIMESTAMP NOT NULL,
-                        end_time TIMESTAMP NOT NULL,
-                        creator_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        location GEOGRAPHY(POINT, 4326)
-);
-
-CREATE INDEX idx_events_location ON events USING GIST (location);
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS user_tags;
 DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS profile;

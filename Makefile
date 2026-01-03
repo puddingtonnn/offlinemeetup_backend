@@ -32,6 +32,10 @@ lint: ## Запустить линтер (требуется golangci-lint)
 swag: ## Сгенерировать Swagger документацию
 	go run github.com/swaggo/swag/cmd/swag@latest init -g $(CMD) -d ./
 
+.PHONY: migration
+migration: ## Создать новую миграцию: make migration NAME=create_meetups_table
+	go run github.com/pressly/goose/v3/cmd/goose@latest -dir migrations create $(NAME) sql
+
 # Docker
 
 .PHONY: up
