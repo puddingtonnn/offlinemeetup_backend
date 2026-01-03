@@ -15,7 +15,111 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/meetups": {
+        "/auth/google": {
+            "post": {
+                "description": "Принимает ID Token от Google SDK, возвращает JWT.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Вход через Google",
+                "parameters": [
+                    {
+                        "description": "Google ID Token",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.googleLoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/telegram/callback": {
+            "get": {
+                "description": "Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.",
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Callback для виджета Telegram",
+                "responses": {}
+            }
+        },
+        "/auth/telegram/login": {
+            "get": {
+                "description": "Возвращает HTML-страницу с Telegram Login Widget для авторизации пользователя через Telegram",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Вход через Telegram",
+                "responses": {
+                    "200": {
+                        "description": "HTML page with Telegram login widget",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает ID текущего пользователя (тест авторизации).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Получить мой профиль",
+                "responses": {
+                    "200": {
+                        "description": "Приветствие с ID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Пользователь не авторизован",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/meetups": {
             "get": {
                 "security": [
                     {
@@ -120,7 +224,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/meetups/{id}": {
+        "/v1/meetups/{id}": {
             "get": {
                 "security": [
                     {
@@ -293,7 +397,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/profile": {
+        "/v1/profile": {
             "get": {
                 "security": [
                     {
@@ -384,110 +488,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/auth/google": {
-            "post": {
-                "description": "Принимает ID Token от Google SDK, возвращает JWT.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Вход через Google",
-                "parameters": [
-                    {
-                        "description": "Google ID Token",
-                        "name": "input",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.googleLoginRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Error",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/auth/me": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Возвращает ID текущего пользователя (тест авторизации).",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Получить мой профиль",
-                "responses": {
-                    "200": {
-                        "description": "Приветствие с ID",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Пользователь не авторизован",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/auth/telegram/callback": {
-            "get": {
-                "description": "Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.",
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Callback для виджета Telegram",
-                "responses": {}
-            }
-        },
-        "/auth/telegram/login": {
-            "get": {
-                "description": "Возвращает HTML-страницу с Telegram Login Widget для авторизации пользователя через Telegram",
-                "produces": [
-                    "text/html"
-                ],
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Вход через Telegram",
-                "responses": {
-                    "200": {
-                        "description": "HTML page with Telegram login widget",
                         "schema": {
                             "type": "string"
                         }
