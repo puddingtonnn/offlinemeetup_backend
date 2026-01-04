@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 
 	"github.com/uptrace/bun"
@@ -17,6 +18,7 @@ func New(dsn string) (*bun.DB, error) {
 
 	db.RegisterModel(
 		(*domain.UserTag)(nil),
+		(*domain.MeetupTag)(nil),
 	)
 
 	if err := db.Ping(); err != nil {

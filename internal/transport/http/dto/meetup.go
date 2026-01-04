@@ -15,6 +15,7 @@ type CreateMeetupRequest struct {
 	EndTime     time.Time   `json:"end_time"`
 	Coordinates Coordinates `json:"coordinates"` // Вложенный JSON
 	Address     string      `json:"address"`
+	TagIDs      []int64     `json:"tags"`
 }
 
 func (r *CreateMeetupRequest) Validate() map[string]string {

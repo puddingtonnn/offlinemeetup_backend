@@ -3,12 +3,13 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"strconv"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
-	"net/http"
-	"strconv"
 )
 
 type MeetupHandler struct {
@@ -104,6 +105,14 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 	radius, _ := strconv.Atoi(query.Get("radius"))
 	limit, _ := strconv.Atoi(query.Get("limit"))
 	offset, _ := strconv.Atoi(query.Get("offset"))
+
+	if lat != 0 && lng != 0 && radius == 0 {
+		radius = 5000 // 5 км
+	}
+
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
 
 	filter := dto.MeetupFilter{
 		Lat:    lat,

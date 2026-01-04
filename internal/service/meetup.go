@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-	"strings"
 )
 
 var (
@@ -37,7 +38,7 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 		AddressText: req.Address,
 	}
 
-	created, err := s.repo.Create(ctx, meetup)
+	created, err := s.repo.Create(ctx, meetup, req.TagIDs)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"fmt"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
@@ -16,11 +17,35 @@ func NewMeetupRepo(db *bun.DB) *MeetupRepo {
 	return &MeetupRepo{db: db}
 }
 
-func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup) (*domain.Meetup, error) {
-	_, err := r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location).Returning("*, ST_AsText(location) AS location").Exec(ctx)
+func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	_, err = r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location).Returning("*, ST_AsText(location) AS location").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
 	}
+
+	if len(tagIDs) > 0 {
+		meetupTags := make([]domain.MeetupTag, len(tagIDs))
+		for i, tagID := range tagIDs {
+			meetupTags[i] = domain.MeetupTag{
+				MeetupID: meetup.ID,
+				TagID:    tagID,
+			}
+		}
+		if _, err := tx.NewInsert().Model(&meetupTags).Exec(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("transaction commit failed: %w", err)
+	}
+
 	return meetup, nil
 }
 
@@ -32,6 +57,7 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, err
 	err := r.db.NewSelect().
 		Model(&meetup).
 		Relation("Creator").
+		Relation("Tags").
 		ColumnExpr("meetup.*, ST_AsText(meetup.location) AS location").
 		Where("meetup.id = ?", id).
 		Scan(ctx)
@@ -48,6 +74,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 	q := r.db.NewSelect().
 		Model(&meetups).
 		Relation("Creator").
+		Relation("Tags").
 		ColumnExpr("meetup.*, ST_AsText(meetup.location) AS location")
 
 	if filter.Radius > 0 {
