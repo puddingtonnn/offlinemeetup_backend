@@ -18,3 +18,12 @@ type UserTag struct {
 	User *User `bun:"rel:belongs-to,join:user_id=id" json:"-"`
 	Tag  *Tag  `bun:"rel:belongs-to,join:tag_id=id" json:"-"`
 }
+
+type MeetupTag struct {
+	bun.BaseModel `bun:"table:meetup_tags" swaggerignore:"true"`
+	MeetupID      int64 `bun:",pk"`
+	TagID         int64 `bun:",pk"`
+
+	Meetup *Meetup `bun:"rel:belongs-to"`
+	Tag    *Tag    `bun:"rel:belongs-to"`
+}

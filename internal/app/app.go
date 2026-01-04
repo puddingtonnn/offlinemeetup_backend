@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
-	"log/slog"
-	"net/http"
-	"time"
 
 	"github.com/uptrace/bun"
 )
@@ -28,16 +29,19 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	userRepo := repo.NewUserRepo(db)
 	profileRepo := repo.NewProfileRepo(db)
 	meetupRepo := repo.NewMeetupRepo(db)
+	tagRepo := repo.NewTagRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	profileService := service.NewProfileService(profileRepo, userRepo)
 	meetupService := service.NewMeetupService(meetupRepo)
+	tagService := service.NewTagService(tagRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
 	profileHandler := handler.NewProfileHandler(profileService)
 	meetupHandler := handler.NewMeetupHandler(meetupService)
+	tagHandler := handler.NewTagHandler(tagService)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, cfg)
 
 	return &App{
 		cfg:    cfg,

@@ -1,9 +1,10 @@
 package domain
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
-	"time"
 )
 
 type Meetup struct {
@@ -28,5 +29,6 @@ type Meetup struct {
 	DeletedAt *time.Time `bun:",soft_delete,nullzero"`
 
 	// Relations
-	Creator *User `bun:"rel:belongs-to,join:creator_id=id"`
+	Creator *User  `bun:"rel:belongs-to,join:creator_id=id"`
+	Tags    []*Tag `bun:"m2m:meetup_tags,join:Meetup=Tag"`
 }

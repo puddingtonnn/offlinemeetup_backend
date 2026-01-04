@@ -8,7 +8,7 @@ import "net/http"
 // @Tags         Auth
 // @Produce      html
 // @Success      200 {string} string "HTML page with Telegram login widget"
-// @Router       /auth/telegram/login [get]
+// @Router       /v1/auth/telegram/login [get]
 func (h *AuthHandler) ServeTelegramLoginPage(w http.ResponseWriter, r *http.Request) {
 	html := `
     <!DOCTYPE html>

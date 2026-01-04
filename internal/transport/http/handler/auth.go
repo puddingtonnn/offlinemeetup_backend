@@ -33,7 +33,7 @@ type googleLoginRequest struct {
 // @Param        input body googleLoginRequest true "Google ID Token"
 // @Success      200  {object}  map[string]string
 // @Failure      400  {string}  string "Error"
-// @Router       /auth/google [post]
+// @Router       /v1/auth/google [post]
 func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	var req googleLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -51,37 +51,11 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
-// TelegramLogin
-// @Summary      Вход через Telegram
-// @Description  Принимает данные виджета Telegram, проверяет хеш, возвращает JWT.
-// @Tags         Auth
-// @Accept       json
-// @Produce      json
-// @Param        input body service.TelegramAuthData true "Telegram Data"
-// @Success      200  {object}  map[string]string
-// @Failure      400  {string}  string "Error"
-// @Router       /auth/telegram [post]
-//func (h *AuthHandler) TelegramLogin(w http.ResponseWriter, r *http.Request) {
-//	var req service.TelegramAuthData
-//	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-//		http.Error(w, "invalid json", http.StatusBadRequest)
-//		return
-//	}
-//
-//	token, err := h.service.LoginTelegram(r.Context(), req)
-//	if err != nil {
-//		http.Error(w, err.Error(), http.StatusInternalServerError)
-//		return
-//	}
-//
-//	json.NewEncoder(w).Encode(map[string]string{"token": token})
-//}
-
 // TelegramCallBack TelegramCallback
 // @Summary      Callback для виджета Telegram
 // @Description  Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.
 // @Tags         Auth
-// @Router       /auth/telegram/callback [get]
+// @Router       /v1/auth/telegram/callback [get]
 func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
