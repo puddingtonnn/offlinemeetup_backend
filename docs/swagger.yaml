@@ -17,6 +17,13 @@ definitions:
       user_id:
         type: integer
     type: object
+  domain.Tag:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
   dto.Coordinates:
     properties:
       lat:
@@ -40,6 +47,10 @@ definitions:
         type: boolean
       start_time:
         type: string
+      tags:
+        items:
+          type: integer
+        type: array
       title:
         type: string
     type: object
@@ -103,7 +114,7 @@ info:
   title: Offline Meetup API
   version: "1.0"
 paths:
-  /auth/google:
+  /v1/auth/google:
     post:
       consumes:
       - application/json
@@ -131,28 +142,6 @@ paths:
       summary: Вход через Google
       tags:
       - Auth
-  /auth/telegram/callback:
-    get:
-      description: Принимает GET параметры от Telegram, валидирует, логинит и редиректит
-        в приложение с токеном.
-      responses: {}
-      summary: Callback для виджета Telegram
-      tags:
-      - Auth
-  /auth/telegram/login:
-    get:
-      description: Возвращает HTML-страницу с Telegram Login Widget для авторизации
-        пользователя через Telegram
-      produces:
-      - text/html
-      responses:
-        "200":
-          description: HTML page with Telegram login widget
-          schema:
-            type: string
-      summary: Вход через Telegram
-      tags:
-      - Auth
   /v1/auth/me:
     get:
       description: Возвращает ID текущего пользователя (тест авторизации).
@@ -170,6 +159,28 @@ paths:
       security:
       - BearerAuth: []
       summary: Получить мой профиль
+      tags:
+      - Auth
+  /v1/auth/telegram/callback:
+    get:
+      description: Принимает GET параметры от Telegram, валидирует, логинит и редиректит
+        в приложение с токеном.
+      responses: {}
+      summary: Callback для виджета Telegram
+      tags:
+      - Auth
+  /v1/auth/telegram/login:
+    get:
+      description: Возвращает HTML-страницу с Telegram Login Widget для авторизации
+        пользователя через Telegram
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: HTML page with Telegram login widget
+          schema:
+            type: string
+      summary: Вход через Telegram
       tags:
       - Auth
   /v1/meetups:
@@ -413,6 +424,25 @@ paths:
       summary: Обновить мой профиль
       tags:
       - Profile
+  /v1/tags:
+    get:
+      description: Возвращает справочник всех доступных тегов/интересов.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Tag'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      summary: Получить список тегов
+      tags:
+      - Tags
 securityDefinitions:
   BearerAuth:
     description: 'Введите токен в формате: Bearer <your-token>'

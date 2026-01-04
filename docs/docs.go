@@ -15,7 +15,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/auth/google": {
+        "/v1/auth/google": {
             "post": {
                 "description": "Принимает ID Token от Google SDK, возвращает JWT.",
                 "consumes": [
@@ -58,36 +58,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/telegram/callback": {
-            "get": {
-                "description": "Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.",
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Callback для виджета Telegram",
-                "responses": {}
-            }
-        },
-        "/auth/telegram/login": {
-            "get": {
-                "description": "Возвращает HTML-страницу с Telegram Login Widget для авторизации пользователя через Telegram",
-                "produces": [
-                    "text/html"
-                ],
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Вход через Telegram",
-                "responses": {
-                    "200": {
-                        "description": "HTML page with Telegram login widget",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
         "/v1/auth/me": {
             "get": {
                 "security": [
@@ -112,6 +82,36 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Пользователь не авторизован",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/telegram/callback": {
+            "get": {
+                "description": "Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.",
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Callback для виджета Telegram",
+                "responses": {}
+            }
+        },
+        "/v1/auth/telegram/login": {
+            "get": {
+                "description": "Возвращает HTML-страницу с Telegram Login Widget для авторизации пользователя через Telegram",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Вход через Telegram",
+                "responses": {
+                    "200": {
+                        "description": "HTML page with Telegram login widget",
                         "schema": {
                             "type": "string"
                         }
@@ -494,6 +494,35 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/v1/tags": {
+            "get": {
+                "description": "Возвращает справочник всех доступных тегов/интересов.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tags"
+                ],
+                "summary": "Получить список тегов",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.Tag"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -520,6 +549,17 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "domain.Tag": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -559,6 +599,12 @@ const docTemplate = `{
                 },
                 "start_time": {
                     "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "title": {
                     "type": "string"
