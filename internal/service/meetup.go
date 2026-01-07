@@ -47,14 +47,25 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 }
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
+
 	var lat, lng float64
 
-	fmt.Printf("DEBUG: Parsing location: '%s'\n", m.Location)
+	if m.Location != "" {
+		cleanStr := strings.TrimPrefix(m.Location, "POINT(")
+		cleanStr = strings.TrimSuffix(cleanStr, ")")
+		fmt.Sscanf(cleanStr, "%f %f", &lng, &lat)
+	}
 
-	cleanStr := strings.TrimPrefix(m.Location, "POINT(")
-	cleanStr = strings.TrimSuffix(cleanStr, ")")
+	tagsResp := make([]dto.TagResponse, 0)
 
-	fmt.Sscanf(cleanStr, "%f %f", &lng, &lat)
+	if len(m.Tags) > 0 {
+		for _, t := range m.Tags {
+			tagsResp = append(tagsResp, dto.TagResponse{
+				ID:   t.ID,
+				Name: t.Name,
+			})
+		}
+	}
 
 	return &dto.MeetupResponse{
 		ID:          m.ID,
@@ -65,6 +76,7 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		Coordinates: dto.Coordinates{Lat: lat, Lng: lng},
 		Address:     m.AddressText,
 		CreatorID:   m.CreatorID,
+		Tags:        tagsResp,
 	}
 }
 
@@ -133,7 +145,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		existing.Location = fmt.Sprintf("POINT(%f %f)", req.Coordinates.Lng, req.Coordinates.Lat)
 	}
 
-	if err := s.repo.Update(ctx, existing); err != nil {
+	if err := s.repo.Update(ctx, existing, *req.TagIDs); err != nil {
 		return nil, err
 	}
 	return s.mapToResponse(existing), nil
