@@ -4,15 +4,23 @@ import (
 	"context"
 	"fmt"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 )
 
-type ProfileService struct {
-	profileRepo *repo.ProfileRepo
-	userRepo    *repo.UserRepo
+type ProfileRepository interface {
+	GetByUserID(ctx context.Context, userID int64) (*domain.Profile, error)
+	UpdateProfile(ctx context.Context, profile *domain.Profile) (*domain.Profile, error)
 }
 
-func NewProfileService(profileRepo *repo.ProfileRepo, userRepo *repo.UserRepo) *ProfileService {
+type UserTagUpdater interface {
+	UpdateTags(ctx context.Context, userID int64, tagNames []string) error
+}
+
+type ProfileService struct {
+	profileRepo ProfileRepository
+	userRepo    UserTagUpdater
+}
+
+func NewProfileService(profileRepo ProfileRepository, userRepo UserTagUpdater) *ProfileService {
 	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo}
 }
 

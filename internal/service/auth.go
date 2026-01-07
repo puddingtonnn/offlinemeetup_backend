@@ -10,7 +10,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"google.golang.org/api/idtoken"
 	"net/url"
 	"sort"
@@ -18,12 +17,17 @@ import (
 	"time"
 )
 
+type AuthRepository interface {
+	GetBySocialID(ctx context.Context, provider, socialID string) (*domain.User, error)
+	CreateUserWithSocial(ctx context.Context, user *domain.User, provider, socialID string, profile *domain.Profile) (*domain.User, error)
+}
+
 type AuthService struct {
-	repo *repo.UserRepo
+	repo AuthRepository
 	cfg  *config.Config
 }
 
-func NewAuthService(repo *repo.UserRepo, cfg *config.Config) *AuthService {
+func NewAuthService(repo AuthRepository, cfg *config.Config) *AuthService {
 	return &AuthService{repo: repo, cfg: cfg}
 }
 

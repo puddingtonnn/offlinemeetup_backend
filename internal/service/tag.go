@@ -4,14 +4,17 @@ import (
 	"context"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 )
 
-type TagService struct {
-	repo *repo.TagRepo
+type TagRepository interface {
+	GetAll(ctx context.Context) ([]domain.Tag, error)
 }
 
-func NewTagService(repo *repo.TagRepo) *TagService {
+type TagService struct {
+	repo TagRepository
+}
+
+func NewTagService(repo TagRepository) *TagService {
 	return &TagService{repo: repo}
 }
 

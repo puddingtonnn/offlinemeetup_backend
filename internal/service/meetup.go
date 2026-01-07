@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
@@ -16,11 +15,19 @@ var (
 	ErrForbidden      = errors.New("you are not the owner of this meetup")
 )
 
-type MeetupService struct {
-	repo *repo.MeetupRepo
+type MeetupRepository interface {
+	Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error)
+	GetByID(ctx context.Context, id int64) (*domain.Meetup, error)
+	List(ctx context.Context, filter dto.MeetupFilter) ([]domain.Meetup, error)
+	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
+	Delete(ctx context.Context, id int64) error
 }
 
-func NewMeetupService(repo *repo.MeetupRepo) *MeetupService {
+type MeetupService struct {
+	repo MeetupRepository
+}
+
+func NewMeetupService(repo MeetupRepository) *MeetupService {
 	return &MeetupService{repo: repo}
 }
 
