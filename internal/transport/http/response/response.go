@@ -49,5 +49,5 @@ func RespondError(w http.ResponseWriter, err error, log *slog.Logger) {
 		msg = "Internal Server Error"
 	}
 
-	RespondJSON(w, statusCode, ErrorResponse{Error: msg})
+	JSON(w, statusCode, ErrorResponse{Error: msg})
 }
