@@ -2,7 +2,8 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
+	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -14,10 +15,11 @@ import (
 
 type MeetupHandler struct {
 	service *service.MeetupService
+	log     *slog.Logger
 }
 
-func NewMeetupHandler(service *service.MeetupService) *MeetupHandler {
-	return &MeetupHandler{service: service}
+func NewMeetupHandler(service *service.MeetupService, log *slog.Logger) *MeetupHandler {
+	return &MeetupHandler{service: service, log: log}
 }
 
 // CreateMeetup
@@ -33,20 +35,19 @@ func NewMeetupHandler(service *service.MeetupService) *MeetupHandler {
 func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		transport.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
 	var req dto.CreateMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		transport.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
 	resp, err := h.service.CreateMeetup(r.Context(), userID, req)
 	if err != nil {
-		// TODO: ErrorHandler middleware или свитч по типу ошибки
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 
@@ -68,15 +69,15 @@ func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 // @Router      /v1/meetups/{id} [get]
 func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(idStr, 10, 64)
+
+	if err != nil {
+		transport.RespondError(w, service.ErrInvalidInput, h.log)
+	}
 
 	resp, err := h.service.GetMeetup(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, service.ErrMeetupNotFound) {
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 
@@ -124,7 +125,7 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	list, err := h.service.ListMeetups(r.Context(), filter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 
@@ -149,7 +150,7 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		transport.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -158,21 +159,13 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	var req dto.UpdateMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		transport.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
 	resp, err := h.service.UpdateMeetup(r.Context(), userID, meetupID, req)
 	if err != nil {
-		if errors.Is(err, service.ErrForbidden) {
-			http.Error(w, "Forbidden: you are not the owner", http.StatusForbidden)
-			return
-		}
-		if errors.Is(err, service.ErrMeetupNotFound) {
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 
@@ -195,7 +188,7 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		transport.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -204,16 +197,7 @@ func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.DeleteMeetup(r.Context(), userID, meetupID)
 	if err != nil {
-		if errors.Is(err, service.ErrForbidden) {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-		if errors.Is(err, service.ErrMeetupNotFound) {
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		transport.RespondError(w, err, h.log)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

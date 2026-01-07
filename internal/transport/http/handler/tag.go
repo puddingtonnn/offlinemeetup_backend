@@ -2,6 +2,8 @@ package handler
 
 import (
 	"encoding/json"
+	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -9,10 +11,11 @@ import (
 
 type TagHandler struct {
 	service *service.TagService
+	log     *slog.Logger
 }
 
-func NewTagHandler(service *service.TagService) *TagHandler {
-	return &TagHandler{service: service}
+func NewTagHandler(service *service.TagService, log *slog.Logger) *TagHandler {
+	return &TagHandler{service: service, log: log}
 }
 
 // List
@@ -26,7 +29,7 @@ func NewTagHandler(service *service.TagService) *TagHandler {
 func (h *TagHandler) List(w http.ResponseWriter, r *http.Request) {
 	tags, err := h.service.ListTags(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 

@@ -4,17 +4,19 @@ import (
 	"encoding/json"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
+	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 )
 
 type ProfileHandler struct {
 	service *service.ProfileService
+	log     *slog.Logger
 }
 
-func NewProfileHandler(service *service.ProfileService) *ProfileHandler {
+func NewProfileHandler(service *service.ProfileService, log *slog.Logger) *ProfileHandler {
 	return &ProfileHandler{
-		service: service,
-	}
+		service: service, log: log}
 }
 
 // GetMyProfile
@@ -31,18 +33,18 @@ func NewProfileHandler(service *service.ProfileService) *ProfileHandler {
 func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		transport.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
 	profile, err := h.service.GetProfile(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 
 	if profile == nil {
-		http.Error(w, "Profile not found", http.StatusNotFound)
+		transport.RespondError(w, service.ErrNotFound, h.log)
 		return
 	}
 
@@ -66,19 +68,19 @@ func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 func (h *ProfileHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		transport.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
 	var input service.UpdateProfileInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 
 	updatedProfile, err := h.service.UpdateProfile(r.Context(), userID, &input)
 	if err != nil {
-		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 

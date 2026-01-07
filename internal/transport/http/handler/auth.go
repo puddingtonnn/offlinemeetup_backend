@@ -3,7 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -12,12 +13,11 @@ import (
 
 type AuthHandler struct {
 	service *service.AuthService
+	log     *slog.Logger
 }
 
-func NewAuthHandler(service *service.AuthService) *AuthHandler {
-	return &AuthHandler{
-		service: service,
-	}
+func NewAuthHandler(service *service.AuthService, log *slog.Logger) *AuthHandler {
+	return &AuthHandler{service: service, log: log}
 }
 
 type googleLoginRequest struct {
@@ -37,14 +37,13 @@ type googleLoginRequest struct {
 func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	var req googleLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		transport.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
 	token, err := h.service.LoginGoogle(r.Context(), req.Token)
 	if err != nil {
-		log.Printf("Error logging in: %v", err)
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		transport.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -60,15 +59,13 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	if q.Get("hash") == "" || q.Get("id") == "" {
-		http.Error(w, "Missing hash or id", http.StatusBadRequest)
+		transport.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
 	token, err := h.service.LoginTelegram(r.Context(), q)
 	if err != nil {
-		fmt.Printf("LOGIN ERROR: %v\n", err)
-		redirectError := fmt.Sprintf("meetuper://auth/error?message=%s", "auth_failed")
-		http.Redirect(w, r, redirectError, http.StatusNotFound)
+		transport.RespondError(w, service.ErrNotFound, h.log)
 		return
 	}
 
@@ -88,7 +85,7 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "user not found in context", http.StatusInternalServerError)
+		transport.RespondError(w, service.ErrInternal, h.log)
 		return
 	}
 	w.Write([]byte(fmt.Sprintf("Your user ID is: %d", userID)))
@@ -101,7 +98,7 @@ type devLoginRequest struct {
 func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 	var req devLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 
@@ -111,7 +108,7 @@ func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.service.CreateDevToken(r.Context(), req.Email)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		transport.RespondError(w, err, h.log)
 		return
 	}
 

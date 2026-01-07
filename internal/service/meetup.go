@@ -2,14 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-)
-
-var (
-	ErrMeetupNotFound = errors.New("meetup not found")
-	ErrForbidden      = errors.New("you are not the owner of this meetup")
 )
 
 type MeetupRepository interface {
@@ -80,10 +75,10 @@ func (s *MeetupService) GetMeetup(ctx context.Context, id int64) (*dto.MeetupRes
 	m, err := s.repo.GetByID(ctx, id)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting meetup: %w", err)
 	}
 	if m == nil {
-		return nil, ErrMeetupNotFound
+		return nil, fmt.Errorf("meetup %d: %w", id, ErrNotFound)
 	}
 
 	return s.mapToResponse(m), nil
@@ -112,7 +107,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		return nil, err
 	}
 	if existing == nil {
-		return nil, ErrMeetupNotFound
+		return nil, fmt.Errorf("getting meetup: %w", err)
 	}
 
 	if existing.CreatorID != userID {
@@ -156,7 +151,7 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 		return err
 	}
 	if existing == nil {
-		return ErrMeetupNotFound
+		return fmt.Errorf("getting meetup: %w", err)
 	}
 
 	if existing.CreatorID != userID {
