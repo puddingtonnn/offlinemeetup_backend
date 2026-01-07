@@ -3,9 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
-
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
@@ -32,8 +29,6 @@ func NewMeetupService(repo MeetupRepository) *MeetupService {
 }
 
 func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.CreateMeetupRequest) (*dto.MeetupResponse, error) {
-	wktLocation := fmt.Sprintf("POINT(%.6f %.6f)", req.Coordinates.Lng, req.Coordinates.Lat)
-
 	meetup := &domain.Meetup{
 		Title:       req.Title,
 		Description: req.Description,
@@ -41,7 +36,10 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 		CreatorID:   userID,
 		StartTime:   req.StartTime,
 		EndTime:     req.EndTime,
-		Location:    wktLocation,
+		Location: domain.Location{
+			Lat: req.Coordinates.Lat,
+			Lng: req.Coordinates.Lng,
+		},
 		AddressText: req.Address,
 	}
 
@@ -54,15 +52,6 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 }
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
-
-	var lat, lng float64
-
-	if m.Location != "" {
-		cleanStr := strings.TrimPrefix(m.Location, "POINT(")
-		cleanStr = strings.TrimSuffix(cleanStr, ")")
-		fmt.Sscanf(cleanStr, "%f %f", &lng, &lat)
-	}
-
 	tagsResp := make([]dto.TagResponse, 0)
 
 	if len(m.Tags) > 0 {
@@ -80,7 +69,7 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		Description: m.Description,
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
-		Coordinates: dto.Coordinates{Lat: lat, Lng: lng},
+		Coordinates: dto.Coordinates{Lat: m.Location.Lat, Lng: m.Location.Lng},
 		Address:     m.AddressText,
 		CreatorID:   m.CreatorID,
 		Tags:        tagsResp,
@@ -149,7 +138,10 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		existing.AddressText = *req.Address
 	}
 	if req.Coordinates != nil {
-		existing.Location = fmt.Sprintf("POINT(%f %f)", req.Coordinates.Lng, req.Coordinates.Lat)
+		existing.Location = domain.Location{
+			Lat: req.Coordinates.Lat,
+			Lng: req.Coordinates.Lng,
+		}
 	}
 
 	if err := s.repo.Update(ctx, existing, *req.TagIDs); err != nil {
