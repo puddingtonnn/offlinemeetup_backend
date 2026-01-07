@@ -13,7 +13,7 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func RespondJSON(w http.ResponseWriter, status int, payload interface{}) {
+func JSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if payload != nil {

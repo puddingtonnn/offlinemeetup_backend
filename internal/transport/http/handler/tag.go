@@ -1,8 +1,7 @@
 package handler
 
 import (
-	"encoding/json"
-	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 	"log/slog"
 	"net/http"
 
@@ -29,10 +28,9 @@ func NewTagHandler(service *service.TagService, log *slog.Logger) *TagHandler {
 func (h *TagHandler) List(w http.ResponseWriter, r *http.Request) {
 	tags, err := h.service.ListTags(r.Context())
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tags)
+	response.JSON(w, http.StatusOK, tags)
 }

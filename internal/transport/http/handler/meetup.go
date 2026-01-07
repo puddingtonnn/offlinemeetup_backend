@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -30,29 +30,28 @@ func NewMeetupHandler(service *service.MeetupService, log *slog.Logger) *MeetupH
 // @Produce	json
 // @Param input body dto.CreateMeetupRequest true "Данные митапа"
 // @Success 201
-// @Failure 400 {string} string "Error"
+// @Failure 400 {object} response.ErrorResponse
 // @Router /v1/meetups [post]
 func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		transport.RespondError(w, service.ErrUnauthorized, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
 	var req dto.CreateMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		transport.RespondError(w, service.ErrInvalidInput, h.log)
+		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
 	resp, err := h.service.CreateMeetup(r.Context(), userID, req)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	response.JSON(w, http.StatusCreated, resp)
 }
 
 // GetByID
@@ -63,25 +62,25 @@ func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 // @Produce     json
 // @Param       id   path      int  true  "Meetup ID"
 // @Success     200  {object}  dto.MeetupResponse
-// @Failure     400  {string}  string  "Invalid ID"
-// @Failure     404  {string}  string  "Meetup not found"
-// @Failure     500  {string}  string  "Internal Server Error"
+// @Failure     400  {object}  response.ErrorResponse
+// @Failure     404  {object}  response.ErrorResponse
 // @Router      /v1/meetups/{id} [get]
 func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 
 	if err != nil {
-		transport.RespondError(w, service.ErrInvalidInput, h.log)
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
 	}
 
 	resp, err := h.service.GetMeetup(r.Context(), id)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	json.NewEncoder(w).Encode(resp)
+	response.JSON(w, http.StatusOK, resp)
 }
 
 // List
@@ -96,7 +95,7 @@ func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 // @Param       limit   query     int     false  "Лимит записей (default: 20)"
 // @Param       offset  query     int     false  "Смещение (pagination)"
 // @Success     200     {array}   dto.MeetupResponse
-// @Failure     500     {string}  string  "Internal Server Error"
+// @Failure     500     {object}  response.ErrorResponse
 // @Router      /v1/meetups [get]
 func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
@@ -125,11 +124,11 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	list, err := h.service.ListMeetups(r.Context(), filter)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	json.NewEncoder(w).Encode(list)
+	response.JSON(w, http.StatusOK, list)
 }
 
 // Update
@@ -142,15 +141,14 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Param       id     path      int                      true  "Meetup ID"
 // @Param       input  body      dto.UpdateMeetupRequest  true  "Поля для обновления (nil поля игнорируются)"
 // @Success     200    {object}  dto.MeetupResponse
-// @Failure     400    {string}  string  "Invalid input"
-// @Failure     403    {string}  string  "Forbidden: You are not the owner"
-// @Failure     404    {string}  string  "Meetup not found"
-// @Failure     500    {string}  string  "Internal Server Error"
+// @Failure     400    {object}  response.ErrorResponse
+// @Failure     403    {object}  response.ErrorResponse
+// @Failure     404    {object}  response.ErrorResponse
 // @Router      /v1/meetups/{id} [put]
 func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		transport.RespondError(w, service.ErrUnauthorized, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -159,17 +157,17 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	var req dto.UpdateMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		transport.RespondError(w, service.ErrInvalidInput, h.log)
+		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
 	resp, err := h.service.UpdateMeetup(r.Context(), userID, meetupID, req)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	json.NewEncoder(w).Encode(resp)
+	response.JSON(w, http.StatusOK, resp)
 }
 
 // Delete
@@ -180,15 +178,14 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Produce     json
 // @Param       id   path      int  true  "Meetup ID"
 // @Success     204  {object}  nil  "No Content"
-// @Failure     400  {string}  string  "Invalid ID"
-// @Failure     403  {string}  string  "Forbidden: You are not the owner"
-// @Failure     404  {string}  string  "Meetup not found"
-// @Failure     500  {string}  string  "Internal Server Error"
+// @Failure     400  {object}  response.ErrorResponse
+// @Failure     403  {object}  response.ErrorResponse
+// @Failure     404  {object}  response.ErrorResponse
 // @Router      /v1/meetups/{id} [delete]
 func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		transport.RespondError(w, service.ErrUnauthorized, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -197,7 +194,8 @@ func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.DeleteMeetup(r.Context(), userID, meetupID)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

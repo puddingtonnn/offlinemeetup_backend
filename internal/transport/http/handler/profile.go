@@ -3,8 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
-	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 	"log/slog"
 	"net/http"
 )
@@ -21,69 +22,59 @@ func NewProfileHandler(service *service.ProfileService, log *slog.Logger) *Profi
 
 // GetMyProfile
 // @Summary      Получить мой профиль
-// @Description  Возвращает профиль текущего авторизованного пользователя. ID берется из JWT токена.
+// @Description  Возвращает профиль текущего пользователя вместе с тегами.
 // @Tags         Profile
 // @Produce      json
-// @Success      200  {object}  domain.Profile
-// @Failure      401  {string}  string "Unauthorized"
-// @Failure      404  {string}  string "Profile not found"
-// @Failure      500  {string}  string "Internal Server Error"
-// @Security     ApiKeyAuth
+// @Success      200  {object}  dto.ProfileResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
+// @Security     BearerAuth
 // @Router       /v1/profile [get]
 func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		transport.RespondError(w, service.ErrUnauthorized, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	profile, err := h.service.GetProfile(r.Context(), userID)
+	profileDTO, err := h.service.GetProfile(r.Context(), userID)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	if profile == nil {
-		transport.RespondError(w, service.ErrNotFound, h.log)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(profile)
+	response.JSON(w, http.StatusOK, profileDTO)
 }
 
 // UpdateMyProfile
 // @Summary      Обновить мой профиль
-// @Description  Обновляет никнейм, био, аватар и теги пользователя.
+// @Description  Обновляет никнейм, био, аватар и теги (передавать ID тегов).
 // @Tags         Profile
 // @Accept       json
 // @Produce      json
-// @Param        input body service.UpdateProfileInput true "Данные для обновления профиля"
-// @Success      200  {object}  domain.Profile
-// @Failure      400  {string}  string "Invalid input"
-// @Failure      401  {string}  string "Unauthorized"
-// @Failure      500  {string}  string "Internal Server Error"
-// @Security     ApiKeyAuth
+// @Param        input body dto.UpdateProfileRequest true "Данные для обновления профиля"
+// @Success      200  {object}  dto.ProfileResponse
+// @Failure      400  {object}  response.ErrorResponse
+// @Security     BearerAuth
 // @Router       /v1/profile [put]
 func (h *ProfileHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		transport.RespondError(w, service.ErrUnauthorized, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	var input service.UpdateProfileInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		transport.RespondError(w, err, h.log)
+	var req dto.UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
-	updatedProfile, err := h.service.UpdateProfile(r.Context(), userID, &input)
+	updatedProfileDTO, err := h.service.UpdateProfile(r.Context(), userID, req)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedProfile)
+	response.JSON(w, http.StatusOK, updatedProfileDTO)
 }

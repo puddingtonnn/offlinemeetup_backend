@@ -3,7 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 	"log/slog"
 	"net/http"
 
@@ -32,22 +32,22 @@ type googleLoginRequest struct {
 // @Produce      json
 // @Param        input body googleLoginRequest true "Google ID Token"
 // @Success      200  {object}  map[string]string
-// @Failure      400  {string}  string "Error"
+// @Failure      400  {object}  response.ErrorResponse
 // @Router       /v1/auth/google [post]
 func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	var req googleLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		transport.RespondError(w, service.ErrInvalidInput, h.log)
+		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
 	token, err := h.service.LoginGoogle(r.Context(), req.Token)
 	if err != nil {
-		transport.RespondError(w, service.ErrUnauthorized, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	response.JSON(w, http.StatusOK, map[string]string{"token": token})
 }
 
 // TelegramCallBack TelegramCallback
@@ -59,13 +59,16 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	if q.Get("hash") == "" || q.Get("id") == "" {
-		transport.RespondError(w, service.ErrUnauthorized, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
 	token, err := h.service.LoginTelegram(r.Context(), q)
 	if err != nil {
-		transport.RespondError(w, service.ErrNotFound, h.log)
+		h.log.Error("Telegram login failed", slog.String("err", err.Error()))
+
+		redirectURL := fmt.Sprintf("meetuper://auth/error?message=%s", "login_failed")
+		http.Redirect(w, r, redirectURL, http.StatusFound)
 		return
 	}
 
@@ -80,12 +83,12 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Produce      json
 // @Success      200  {string}  string "Приветствие с ID"
-// @Failure      401  {string}  string "Пользователь не авторизован"
+// @Failure      401  {object}  response.ErrorResponse
 // @Router       /v1/auth/me [get]
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		transport.RespondError(w, service.ErrInternal, h.log)
+		response.RespondError(w, service.ErrInternal, h.log)
 		return
 	}
 	w.Write([]byte(fmt.Sprintf("Your user ID is: %d", userID)))
@@ -98,7 +101,7 @@ type devLoginRequest struct {
 func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 	var req devLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
@@ -108,11 +111,11 @@ func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.service.CreateDevToken(r.Context(), req.Email)
 	if err != nil {
-		transport.RespondError(w, err, h.log)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{
+	response.JSON(w, http.StatusOK, map[string]string{
 		"token": token,
 		"note":  "THIS IS A DEV TOKEN! DO NOT USE IN PRODUCTION",
 	})
