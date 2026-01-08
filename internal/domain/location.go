@@ -30,16 +30,24 @@ func (l Location) Scan(value interface{}) error {
 		return fmt.Errorf("failed to scan Location: expected string or []byte, got %T", value)
 	}
 
-	trimmed := strings.TrimSpace(data)
-	if !strings.HasPrefix(strings.ToUpper(trimmed), "POINT") {
-		return fmt.Errorf("invalid location format: %s", data)
+	s := strings.TrimSpace(data)
+
+	if !strings.HasPrefix(strings.ToUpper(s), "POINT") {
+		return fmt.Errorf("scan error: invalid WKT format, expected POINT(...), got: %q", data)
 	}
 
-	trimmed = strings.TrimLeft(trimmed, "POINTpoint")
-	trimmed = strings.Trim(trimmed, " ()")
+	s = s[5:]
 
-	_, err := fmt.Sscanf(trimmed, "%f,%f", &l.Lat, &l.Lng)
-	return err
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "()")
+	s = strings.TrimSpace(s)
+
+	_, err := fmt.Sscanf(s, "%f %f", &l.Lng, &l.Lat)
+	if err != nil {
+		return fmt.Errorf("scan error: parsed string %q from original %q: %w", s, data, err)
+	}
+
+	return nil
 }
 
 func (l Location) Value() (driver.Value, error) {

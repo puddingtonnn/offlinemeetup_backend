@@ -57,7 +57,6 @@ func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 // GetByID
 // @Summary     Получить митап по ID
 // @Description Возвращает детальную информацию о митапе.
-// @Security    BearerAuth
 // @Tags        Meetups
 // @Produce     json
 // @Param       id   path      int  true  "Meetup ID"
@@ -86,7 +85,6 @@ func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 // List
 // @Summary     Поиск и список митапов
 // @Description Возвращает список митапов. Если переданы lat/lng/radius — ищет ближайшие. Иначе сортирует по времени.
-// @Security    BearerAuth
 // @Tags        Meetups
 // @Produce     json
 // @Param       lat     query     number  false  "Широта (Latitude)"

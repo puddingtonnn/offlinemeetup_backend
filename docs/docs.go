@@ -50,9 +50,9 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Error",
+                        "description": "Bad Request",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -65,25 +65,31 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Возвращает ID текущего пользователя (тест авторизации).",
+                "description": "Возвращает ID, email, роль и статус.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Auth"
                 ],
-                "summary": "Получить мой профиль",
+                "summary": "Получить данные моего аккаунта",
                 "responses": {
                     "200": {
-                        "description": "Приветствие с ID",
+                        "description": "OK",
                         "schema": {
                             "type": "string"
                         }
                     },
                     "401": {
-                        "description": "Пользователь не авторизован",
+                        "description": "Unauthorized",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -121,11 +127,6 @@ const docTemplate = `{
         },
         "/v1/meetups": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "Возвращает список митапов. Если переданы lat/lng/radius — ищет ближайшие. Иначе сортирует по времени.",
                 "produces": [
                     "application/json"
@@ -179,7 +180,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -216,9 +217,9 @@ const docTemplate = `{
                         "description": "Created"
                     },
                     "400": {
-                        "description": "Error",
+                        "description": "Bad Request",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -226,11 +227,6 @@ const docTemplate = `{
         },
         "/v1/meetups/{id}": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "Возвращает детальную информацию о митапе.",
                 "produces": [
                     "application/json"
@@ -256,21 +252,15 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid ID",
+                        "description": "Bad Request",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "Meetup not found",
+                        "description": "Not Found",
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -318,27 +308,21 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid input",
+                        "description": "Bad Request",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     },
                     "403": {
-                        "description": "Forbidden: You are not the owner",
+                        "description": "Forbidden",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "Meetup not found",
+                        "description": "Not Found",
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -371,27 +355,21 @@ const docTemplate = `{
                         "description": "No Content"
                     },
                     "400": {
-                        "description": "Invalid ID",
+                        "description": "Bad Request",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     },
                     "403": {
-                        "description": "Forbidden: You are not the owner",
+                        "description": "Forbidden",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "Meetup not found",
+                        "description": "Not Found",
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -401,10 +379,10 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
-                "description": "Возвращает профиль текущего авторизованного пользователя. ID берется из JWT токена.",
+                "description": "Возвращает профиль текущего пользователя вместе с тегами.",
                 "produces": [
                     "application/json"
                 ],
@@ -416,25 +394,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/domain.Profile"
+                            "$ref": "#/definitions/dto.ProfileResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "Profile not found",
+                        "description": "Not Found",
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -442,10 +414,10 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
-                "description": "Обновляет никнейм, био, аватар и теги пользователя.",
+                "description": "Обновляет никнейм, био, аватар и теги (передавать ID тегов).",
                 "consumes": [
                     "application/json"
                 ],
@@ -463,7 +435,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/service.UpdateProfileInput"
+                            "$ref": "#/definitions/dto.UpdateProfileRequest"
                         }
                     }
                 ],
@@ -471,25 +443,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/domain.Profile"
+                            "$ref": "#/definitions/dto.ProfileResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid input",
+                        "description": "Bad Request",
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -511,14 +471,14 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/domain.Tag"
+                                "$ref": "#/definitions/dto.TagResponse"
                             }
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -526,43 +486,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "domain.Profile": {
-            "type": "object",
-            "properties": {
-                "avatar_url": {
-                    "type": "string"
-                },
-                "bio": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_organizer": {
-                    "type": "boolean"
-                },
-                "nickname": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "user_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "domain.Tag": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
         "dto.Coordinates": {
             "type": "object",
             "properties": {
@@ -635,7 +558,53 @@ const docTemplate = `{
                 "start_time": {
                     "type": "string"
                 },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TagResponse"
+                    }
+                },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ProfileResponse": {
+            "type": "object",
+            "properties": {
+                "avatar_url": {
+                    "type": "string"
+                },
+                "bio": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_organizer": {
+                    "type": "boolean"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TagResponse"
+                    }
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.TagResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
                     "type": "string"
                 }
             }
@@ -661,20 +630,18 @@ const docTemplate = `{
                 "start_time": {
                     "type": "string"
                 },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "title": {
                     "type": "string"
                 }
             }
         },
-        "handler.googleLoginRequest": {
-            "type": "object",
-            "properties": {
-                "token": {
-                    "type": "string"
-                }
-            }
-        },
-        "service.UpdateProfileInput": {
+        "dto.UpdateProfileRequest": {
             "type": "object",
             "properties": {
                 "avatar_url": {
@@ -689,8 +656,24 @@ const docTemplate = `{
                 "tags": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "type": "integer"
                     }
+                }
+            }
+        },
+        "handler.googleLoginRequest": {
+            "type": "object",
+            "properties": {
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
                 }
             }
         }

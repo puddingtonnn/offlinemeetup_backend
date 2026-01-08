@@ -58,7 +58,8 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, err
 		Model(&meetup).
 		Relation("Creator").
 		Relation("Tags").
-		ColumnExpr("meetup.*, ST_AsText(meetup.location) AS location").
+		ExcludeColumn("location").
+		ColumnExpr("ST_AsText(meetup.location) AS location").
 		Where("meetup.id = ?", id).
 		Scan(ctx)
 
@@ -75,7 +76,8 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 		Model(&meetups).
 		Relation("Creator").
 		Relation("Tags").
-		ColumnExpr("meetup.*, ST_AsText(meetup.location) AS location")
+		ExcludeColumn("location").
+		ColumnExpr("ST_AsText(meetup.location) AS location")
 
 	if filter.Radius > 0 {
 		q.Where("ST_DWithin(location, ST_MakePoint(?, ?)::geography, ?)",

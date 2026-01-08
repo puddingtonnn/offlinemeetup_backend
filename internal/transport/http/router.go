@@ -29,11 +29,25 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 	}
 
 	router.Route("/v1", func(r chi.Router) {
-		router.Group(func(r chi.Router) {
+		r.Group(func(r chi.Router) {
 			r.Post("/auth/google", authHandler.GoogleLogin)
 			r.Route("/auth/telegram", func(r chi.Router) {
 				r.Get("/login", authHandler.ServeTelegramLoginPage)
 				r.Get("/callback", authHandler.TelegramCallBack)
+			})
+			r.Get("/tags", tagHandler.List)
+		})
+
+		r.Route("/meetups", func(r chi.Router) {
+			r.Get("/", meetupHandler.List)
+			r.Get("/{id}", meetupHandler.GetByID)
+
+			r.Group(func(r chi.Router) {
+				r.Use(authMiddleware.AuthMiddleware(cfg))
+
+				r.Post("/", meetupHandler.CreateMeetup)
+				r.Put("/{id}", meetupHandler.Update)
+				r.Delete("/{id}", meetupHandler.Delete)
 			})
 		})
 
@@ -42,19 +56,9 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 
 			r.Get("/auth/me", authHandler.Me)
 
-			r.Get("/tags", tagHandler.List)
-
 			r.Route("/profile", func(r chi.Router) {
 				r.Get("/", profileHandler.GetMyProfile)
 				r.Put("/", profileHandler.UpdateMyProfile)
-			})
-
-			r.Route("/meetups", func(r chi.Router) {
-				r.Post("/", meetupHandler.CreateMeetup)
-				r.Get("/", meetupHandler.List)
-				r.Get("/{id}", meetupHandler.GetByID)
-				r.Put("/{id}", meetupHandler.Update)
-				r.Delete("/{id}", meetupHandler.Delete)
 			})
 		})
 	})
