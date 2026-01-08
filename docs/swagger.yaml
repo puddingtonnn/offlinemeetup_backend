@@ -1,29 +1,5 @@
 basePath: /
 definitions:
-  domain.Profile:
-    properties:
-      avatar_url:
-        type: string
-      bio:
-        type: string
-      id:
-        type: integer
-      is_organizer:
-        type: boolean
-      nickname:
-        type: string
-      updated_at:
-        type: string
-      user_id:
-        type: integer
-    type: object
-  domain.Tag:
-    properties:
-      id:
-        type: integer
-      name:
-        type: string
-    type: object
   dto.Coordinates:
     properties:
       lat:
@@ -70,7 +46,37 @@ definitions:
         type: integer
       start_time:
         type: string
+      tags:
+        items:
+          $ref: '#/definitions/dto.TagResponse'
+        type: array
       title:
+        type: string
+    type: object
+  dto.ProfileResponse:
+    properties:
+      avatar_url:
+        type: string
+      bio:
+        type: string
+      id:
+        type: integer
+      is_organizer:
+        type: boolean
+      nickname:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/dto.TagResponse'
+        type: array
+      user_id:
+        type: integer
+    type: object
+  dto.TagResponse:
+    properties:
+      id:
+        type: integer
+      name:
         type: string
     type: object
   dto.UpdateMeetupRequest:
@@ -87,15 +93,14 @@ definitions:
         type: boolean
       start_time:
         type: string
+      tags:
+        items:
+          type: integer
+        type: array
       title:
         type: string
     type: object
-  handler.googleLoginRequest:
-    properties:
-      token:
-        type: string
-    type: object
-  service.UpdateProfileInput:
+  dto.UpdateProfileRequest:
     properties:
       avatar_url:
         type: string
@@ -105,8 +110,18 @@ definitions:
         type: string
       tags:
         items:
-          type: string
+          type: integer
         type: array
+    type: object
+  handler.googleLoginRequest:
+    properties:
+      token:
+        type: string
+    type: object
+  response.ErrorResponse:
+    properties:
+      error:
+        type: string
     type: object
 info:
   contact: {}
@@ -136,29 +151,33 @@ paths:
               type: string
             type: object
         "400":
-          description: Error
+          description: Bad Request
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
       summary: Вход через Google
       tags:
       - Auth
   /v1/auth/me:
     get:
-      description: Возвращает ID текущего пользователя (тест авторизации).
+      description: Возвращает ID, email, роль и статус.
       produces:
       - application/json
       responses:
         "200":
-          description: Приветствие с ID
+          description: OK
           schema:
             type: string
         "401":
-          description: Пользователь не авторизован
+          description: Unauthorized
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Получить мой профиль
+      summary: Получить данные моего аккаунта
       tags:
       - Auth
   /v1/auth/telegram/callback:
@@ -220,9 +239,7 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            type: string
-      security:
-      - BearerAuth: []
+            $ref: '#/definitions/response.ErrorResponse'
       summary: Поиск и список митапов
       tags:
       - Meetups
@@ -242,9 +259,9 @@ paths:
         "201":
           description: Created
         "400":
-          description: Error
+          description: Bad Request
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Создать митап
@@ -265,21 +282,17 @@ paths:
         "204":
           description: No Content
         "400":
-          description: Invalid ID
+          description: Bad Request
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
         "403":
-          description: 'Forbidden: You are not the owner'
+          description: Forbidden
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
         "404":
-          description: Meetup not found
+          description: Not Found
           schema:
-            type: string
-        "500":
-          description: Internal Server Error
-          schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Удалить митап
@@ -301,19 +314,13 @@ paths:
           schema:
             $ref: '#/definitions/dto.MeetupResponse'
         "400":
-          description: Invalid ID
+          description: Bad Request
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
         "404":
-          description: Meetup not found
+          description: Not Found
           schema:
-            type: string
-        "500":
-          description: Internal Server Error
-          schema:
-            type: string
-      security:
-      - BearerAuth: []
+            $ref: '#/definitions/response.ErrorResponse'
       summary: Получить митап по ID
       tags:
       - Meetups
@@ -341,21 +348,17 @@ paths:
           schema:
             $ref: '#/definitions/dto.MeetupResponse'
         "400":
-          description: Invalid input
+          description: Bad Request
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
         "403":
-          description: 'Forbidden: You are not the owner'
+          description: Forbidden
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
         "404":
-          description: Meetup not found
+          description: Not Found
           schema:
-            type: string
-        "500":
-          description: Internal Server Error
-          schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Обновить митап
@@ -363,64 +366,51 @@ paths:
       - Meetups
   /v1/profile:
     get:
-      description: Возвращает профиль текущего авторизованного пользователя. ID берется
-        из JWT токена.
+      description: Возвращает профиль текущего пользователя вместе с тегами.
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/domain.Profile'
+            $ref: '#/definitions/dto.ProfileResponse'
         "401":
           description: Unauthorized
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
         "404":
-          description: Profile not found
+          description: Not Found
           schema:
-            type: string
-        "500":
-          description: Internal Server Error
-          schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: Получить мой профиль
       tags:
       - Profile
     put:
       consumes:
       - application/json
-      description: Обновляет никнейм, био, аватар и теги пользователя.
+      description: Обновляет никнейм, био, аватар и теги (передавать ID тегов).
       parameters:
       - description: Данные для обновления профиля
         in: body
         name: input
         required: true
         schema:
-          $ref: '#/definitions/service.UpdateProfileInput'
+          $ref: '#/definitions/dto.UpdateProfileRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/domain.Profile'
+            $ref: '#/definitions/dto.ProfileResponse'
         "400":
-          description: Invalid input
+          description: Bad Request
           schema:
-            type: string
-        "401":
-          description: Unauthorized
-          schema:
-            type: string
-        "500":
-          description: Internal Server Error
-          schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: Обновить мой профиль
       tags:
       - Profile
@@ -434,12 +424,12 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/domain.Tag'
+              $ref: '#/definitions/dto.TagResponse'
             type: array
         "500":
           description: Internal Server Error
           schema:
-            type: string
+            $ref: '#/definitions/response.ErrorResponse'
       summary: Получить список тегов
       tags:
       - Tags
