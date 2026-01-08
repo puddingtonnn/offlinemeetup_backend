@@ -10,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"google.golang.org/api/idtoken"
 	"net/url"
 	"sort"
@@ -20,6 +21,7 @@ import (
 type AuthRepository interface {
 	GetBySocialID(ctx context.Context, provider, socialID string) (*domain.User, error)
 	CreateUserWithSocial(ctx context.Context, user *domain.User, provider, socialID string, profile *domain.Profile) (*domain.User, error)
+	GetByID(ctx context.Context, id int64) (*domain.User, error)
 }
 
 type AuthService struct {
@@ -136,4 +138,22 @@ func (s *AuthService) CreateDevToken(ctx context.Context, email string) (string,
 
 	token, err := s.findOrCreateUser(ctx, "dev_local", dummySocialID, email)
 	return token, err
+}
+
+func (s *AuthService) GetCurrentUser(ctx context.Context, userID int64) (*dto.UserResponse, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching user: %w", err)
+	}
+	if user == nil {
+		return nil, ErrNotFound
+	}
+
+	return &dto.UserResponse{
+		ID:        user.ID,
+		Email:     user.Email,
+		Role:      user.Role,
+		Status:    string(user.Status),
+		CreatedAt: user.CreatedAt,
+	}, nil
 }

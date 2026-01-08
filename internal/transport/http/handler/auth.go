@@ -76,22 +76,30 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectSuccess, http.StatusFound)
 }
 
-// Me - получение своего профиля
-// @Summary      Получить мой профиль
-// @Description  Возвращает ID текущего пользователя (тест авторизации).
+// Me - получение своего аккаунта
+// @Summary      Получить данные моего аккаунта
+// @Description  Возвращает ID, email, роль и статус.
 // @Tags         Auth
 // @Security     BearerAuth
 // @Produce      json
-// @Success      200  {string}  string "Приветствие с ID"
+// @Success      200  {string}  dto.UserResponse
 // @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
 // @Router       /v1/auth/me [get]
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		response.RespondError(w, service.ErrInternal, h.log)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
-	w.Write([]byte(fmt.Sprintf("Your user ID is: %d", userID)))
+
+	userDTO, err := h.service.GetCurrentUser(r.Context(), userID)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, userDTO)
 }
 
 type devLoginRequest struct {

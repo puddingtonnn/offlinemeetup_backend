@@ -26,6 +26,20 @@ func NewProfileService(profileRepo ProfileRepository, userRepo UserTagUpdater) *
 	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo}
 }
 
+func mapTagsToDTO(tags []domain.Tag) []dto.TagResponse {
+	if tags == nil {
+		return []dto.TagResponse{}
+	}
+	dtos := make([]dto.TagResponse, len(tags))
+	for i, t := range tags {
+		dtos[i] = dto.TagResponse{
+			ID:   t.ID,
+			Name: t.Name,
+		}
+	}
+	return dtos
+}
+
 func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.ProfileResponse, error) {
 	profile, err := s.profileRepo.GetByUserID(ctx, userID)
 	if err != nil {
@@ -47,7 +61,7 @@ func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.Pro
 		Bio:         profile.Bio,
 		AvatarURL:   profile.AvatarURL,
 		IsOrganizer: profile.IsOrganizer,
-		Tags:        tags,
+		Tags:        mapTagsToDTO(tags),
 	}, nil
 }
 

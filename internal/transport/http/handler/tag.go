@@ -22,8 +22,8 @@ func NewTagHandler(service *service.TagService, log *slog.Logger) *TagHandler {
 // @Description Возвращает справочник всех доступных тегов/интересов.
 // @Tags        Tags
 // @Produce     json
-// @Success     200  {array}   domain.Tag
-// @Failure     500  {string}  string  "Internal Server Error"
+// @Success     200  {array}   dto.TagResponse
+// @Failure     500  {object}  response.ErrorResponse
 // @Router      /v1/tags [get]
 func (h *TagHandler) List(w http.ResponseWriter, r *http.Request) {
 	tags, err := h.service.ListTags(r.Context())

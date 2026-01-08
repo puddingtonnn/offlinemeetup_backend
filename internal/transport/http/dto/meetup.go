@@ -48,11 +48,6 @@ type MeetupResponse struct {
 	CreatorID   int64         `json:"creator_id"`
 }
 
-type TagResponse struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-}
-
 type MeetupFilter struct {
 	Lat    float64 `json:"lat"`
 	Lng    float64 `json:"lng"`

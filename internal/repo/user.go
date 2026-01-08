@@ -103,3 +103,20 @@ func (r *UserRepo) UpdateTags(ctx context.Context, userID int64, tagIDs []int64)
 		return err
 	})
 }
+
+func (r *UserRepo) GetByID(ctx context.Context, id int64) (*domain.User, error) {
+	var user domain.User
+	err := r.db.NewSelect().
+		Model(&user).
+		Relation("Tags").
+		Where("id = ?", id).
+		Scan(ctx)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
