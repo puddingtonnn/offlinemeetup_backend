@@ -36,10 +36,10 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	meetupService := service.NewMeetupService(meetupRepo)
 	tagService := service.NewTagService(tagRepo)
 
-	authHandler := handler.NewAuthHandler(authService)
-	profileHandler := handler.NewProfileHandler(profileService)
-	meetupHandler := handler.NewMeetupHandler(meetupService)
-	tagHandler := handler.NewTagHandler(tagService)
+	authHandler := handler.NewAuthHandler(authService, log)
+	profileHandler := handler.NewProfileHandler(profileService, log)
+	meetupHandler := handler.NewMeetupHandler(meetupService, log)
+	tagHandler := handler.NewTagHandler(tagService, log)
 
 	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, cfg)
 

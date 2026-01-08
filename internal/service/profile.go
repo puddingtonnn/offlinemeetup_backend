@@ -4,20 +4,65 @@ import (
 	"context"
 	"fmt"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
-type ProfileService struct {
-	profileRepo *repo.ProfileRepo
-	userRepo    *repo.UserRepo
+type ProfileRepository interface {
+	GetByUserID(ctx context.Context, userID int64) (*domain.Profile, error)
+	UpdateProfile(ctx context.Context, profile *domain.Profile) (*domain.Profile, error)
 }
 
-func NewProfileService(profileRepo *repo.ProfileRepo, userRepo *repo.UserRepo) *ProfileService {
+type UserTagUpdater interface {
+	UpdateTags(ctx context.Context, userID int64, tagIDs []int64) error
+	GetTagsByUserID(ctx context.Context, userID int64) ([]domain.Tag, error)
+}
+
+type ProfileService struct {
+	profileRepo ProfileRepository
+	userRepo    UserTagUpdater
+}
+
+func NewProfileService(profileRepo ProfileRepository, userRepo UserTagUpdater) *ProfileService {
 	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo}
 }
 
-func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*domain.Profile, error) {
-	return s.profileRepo.GetByUserID(ctx, userID)
+func mapTagsToDTO(tags []domain.Tag) []dto.TagResponse {
+	if tags == nil {
+		return []dto.TagResponse{}
+	}
+	dtos := make([]dto.TagResponse, len(tags))
+	for i, t := range tags {
+		dtos[i] = dto.TagResponse{
+			ID:   t.ID,
+			Name: t.Name,
+		}
+	}
+	return dtos
+}
+
+func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.ProfileResponse, error) {
+	profile, err := s.profileRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if profile == nil {
+		return nil, err
+	}
+
+	tags, err := s.userRepo.GetTagsByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch tags: %w", err)
+	}
+
+	return &dto.ProfileResponse{
+		ID:          profile.ID,
+		UserID:      profile.UserID,
+		Nickname:    profile.Nickname,
+		Bio:         profile.Bio,
+		AvatarURL:   profile.AvatarURL,
+		IsOrganizer: profile.IsOrganizer,
+		Tags:        mapTagsToDTO(tags),
+	}, nil
 }
 
 type UpdateProfileInput struct {
@@ -27,24 +72,24 @@ type UpdateProfileInput struct {
 	Tags      []string `json:"tags"`
 }
 
-func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, input *UpdateProfileInput) (*domain.Profile, error) {
+func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dto.UpdateProfileRequest) (*dto.ProfileResponse, error) {
 	profile := &domain.Profile{
 		UserID:    userID,
-		Nickname:  input.Nickname,
-		Bio:       input.Bio,
-		AvatarURL: input.AvatarURL,
+		Nickname:  req.Nickname,
+		Bio:       req.Bio,
+		AvatarURL: req.AvatarURL,
 	}
 
-	updatedProfile, err := s.profileRepo.UpdateProfile(ctx, profile)
+	_, err := s.profileRepo.UpdateProfile(ctx, profile)
 	if err != nil {
 		return nil, fmt.Errorf("updating profile error: %w", err)
 	}
 
-	if input.Tags != nil {
-		if err := s.userRepo.UpdateTags(ctx, userID, input.Tags); err != nil {
+	if req.TagIDs != nil {
+		if err := s.userRepo.UpdateTags(ctx, userID, req.TagIDs); err != nil {
 			return nil, fmt.Errorf("updating tags error: %w", err)
 		}
 	}
 
-	return updatedProfile, nil
+	return s.GetProfile(ctx, userID)
 }

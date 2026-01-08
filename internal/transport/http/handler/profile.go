@@ -3,85 +3,78 @@ package handler
 import (
 	"encoding/json"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 )
 
 type ProfileHandler struct {
 	service *service.ProfileService
+	log     *slog.Logger
 }
 
-func NewProfileHandler(service *service.ProfileService) *ProfileHandler {
+func NewProfileHandler(service *service.ProfileService, log *slog.Logger) *ProfileHandler {
 	return &ProfileHandler{
-		service: service,
-	}
+		service: service, log: log}
 }
 
 // GetMyProfile
 // @Summary      Получить мой профиль
-// @Description  Возвращает профиль текущего авторизованного пользователя. ID берется из JWT токена.
+// @Description  Возвращает профиль текущего пользователя вместе с тегами.
 // @Tags         Profile
 // @Produce      json
-// @Success      200  {object}  domain.Profile
-// @Failure      401  {string}  string "Unauthorized"
-// @Failure      404  {string}  string "Profile not found"
-// @Failure      500  {string}  string "Internal Server Error"
-// @Security     ApiKeyAuth
+// @Success      200  {object}  dto.ProfileResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
+// @Security     BearerAuth
 // @Router       /v1/profile [get]
 func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	profile, err := h.service.GetProfile(r.Context(), userID)
+	profileDTO, err := h.service.GetProfile(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	if profile == nil {
-		http.Error(w, "Profile not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(profile)
+	response.JSON(w, http.StatusOK, profileDTO)
 }
 
 // UpdateMyProfile
 // @Summary      Обновить мой профиль
-// @Description  Обновляет никнейм, био, аватар и теги пользователя.
+// @Description  Обновляет никнейм, био, аватар и теги (передавать ID тегов).
 // @Tags         Profile
 // @Accept       json
 // @Produce      json
-// @Param        input body service.UpdateProfileInput true "Данные для обновления профиля"
-// @Success      200  {object}  domain.Profile
-// @Failure      400  {string}  string "Invalid input"
-// @Failure      401  {string}  string "Unauthorized"
-// @Failure      500  {string}  string "Internal Server Error"
-// @Security     ApiKeyAuth
+// @Param        input body dto.UpdateProfileRequest true "Данные для обновления профиля"
+// @Success      200  {object}  dto.ProfileResponse
+// @Failure      400  {object}  response.ErrorResponse
+// @Security     BearerAuth
 // @Router       /v1/profile [put]
 func (h *ProfileHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	var input service.UpdateProfileInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
+	var req dto.UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
-	updatedProfile, err := h.service.UpdateProfile(r.Context(), userID, &input)
+	updatedProfileDTO, err := h.service.UpdateProfile(r.Context(), userID, req)
 	if err != nil {
-		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedProfile)
+	response.JSON(w, http.StatusOK, updatedProfileDTO)
 }

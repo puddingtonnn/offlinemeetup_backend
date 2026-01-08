@@ -68,46 +68,39 @@ func (r *UserRepo) CreateUserWithSocial(ctx context.Context, user *domain.User, 
 	return user, nil
 }
 
-func (r *UserRepo) UpdateTags(ctx context.Context, userID int64, tagNames []string) error {
+func (r *UserRepo) GetTagsByUserID(ctx context.Context, userID int64) ([]domain.Tag, error) {
+	var tags []domain.Tag
+
+	err := r.db.NewSelect().
+		Model(&tags).
+		Join("JOIN user_tags ut ON ut.tag_id = tag.id").
+		Where("ut.user_id = ?", userID).
+		Order("tag.name ASC").
+		Scan(ctx)
+	return tags, err
+}
+
+func (r *UserRepo) UpdateTags(ctx context.Context, userID int64, tagIDs []int64) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		_, err := tx.NewDelete().Model((*domain.UserTag)(nil)).Where("user_id = ?", userID).Exec(ctx)
 		if err != nil {
 			return err
 		}
 
-		if len(tagNames) == 0 {
+		if len(tagIDs) == 0 {
 			return nil
 		}
 
-		var userTags []domain.UserTag
-
-		for _, tagName := range tagNames {
-			tag := &domain.Tag{Name: tagName}
-
-			exists, err := tx.NewSelect().Model(tag).Where("name = ?", tagName).Exists(ctx)
-			if err != nil {
-				return err
-			}
-
-			if !exists {
-				if _, err := tx.NewInsert().Model(tag).Exec(ctx); err != nil {
-					return err
-				} else {
-					if err := tx.NewSelect().Model(tag).Where("name = ?", tagName).Scan(ctx); err != nil {
-						return err
-					}
-				}
-			}
-			userTags = append(userTags, domain.UserTag{UserID: userID, TagID: tag.ID})
-		}
-
-		if len(userTags) > 0 {
-			_, err := tx.NewInsert().Model(&userTags).Exec(ctx)
-			if err != nil {
-				return err
+		userTags := make([]domain.UserTag, len(tagIDs))
+		for i, id := range tagIDs {
+			userTags[i] = domain.UserTag{
+				UserID: userID,
+				TagID:  id,
 			}
 		}
-		return nil
+
+		_, err = tx.NewInsert().Model(&userTags).Exec(ctx)
+		return err
 	})
 }
 

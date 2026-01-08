@@ -2,31 +2,28 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
-
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
-var (
-	ErrMeetupNotFound = errors.New("meetup not found")
-	ErrForbidden      = errors.New("you are not the owner of this meetup")
-)
-
-type MeetupService struct {
-	repo *repo.MeetupRepo
+type MeetupRepository interface {
+	Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error)
+	GetByID(ctx context.Context, id int64) (*domain.Meetup, error)
+	List(ctx context.Context, filter dto.MeetupFilter) ([]domain.Meetup, error)
+	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
+	Delete(ctx context.Context, id int64) error
 }
 
-func NewMeetupService(repo *repo.MeetupRepo) *MeetupService {
+type MeetupService struct {
+	repo MeetupRepository
+}
+
+func NewMeetupService(repo MeetupRepository) *MeetupService {
 	return &MeetupService{repo: repo}
 }
 
 func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.CreateMeetupRequest) (*dto.MeetupResponse, error) {
-	wktLocation := fmt.Sprintf("POINT(%.6f %.6f)", req.Coordinates.Lng, req.Coordinates.Lat)
-
 	meetup := &domain.Meetup{
 		Title:       req.Title,
 		Description: req.Description,
@@ -34,7 +31,10 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 		CreatorID:   userID,
 		StartTime:   req.StartTime,
 		EndTime:     req.EndTime,
-		Location:    wktLocation,
+		Location: domain.Location{
+			Lat: req.Coordinates.Lat,
+			Lng: req.Coordinates.Lng,
+		},
 		AddressText: req.Address,
 	}
 
@@ -47,14 +47,16 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 }
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
-	var lat, lng float64
+	tagsResp := make([]dto.TagResponse, 0)
 
-	fmt.Printf("DEBUG: Parsing location: '%s'\n", m.Location)
-
-	cleanStr := strings.TrimPrefix(m.Location, "POINT(")
-	cleanStr = strings.TrimSuffix(cleanStr, ")")
-
-	fmt.Sscanf(cleanStr, "%f %f", &lng, &lat)
+	if len(m.Tags) > 0 {
+		for _, t := range m.Tags {
+			tagsResp = append(tagsResp, dto.TagResponse{
+				ID:   t.ID,
+				Name: t.Name,
+			})
+		}
+	}
 
 	return &dto.MeetupResponse{
 		ID:          m.ID,
@@ -62,9 +64,10 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		Description: m.Description,
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
-		Coordinates: dto.Coordinates{Lat: lat, Lng: lng},
+		Coordinates: dto.Coordinates{Lat: m.Location.Lat, Lng: m.Location.Lng},
 		Address:     m.AddressText,
 		CreatorID:   m.CreatorID,
+		Tags:        tagsResp,
 	}
 }
 
@@ -72,10 +75,10 @@ func (s *MeetupService) GetMeetup(ctx context.Context, id int64) (*dto.MeetupRes
 	m, err := s.repo.GetByID(ctx, id)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting meetup: %w", err)
 	}
 	if m == nil {
-		return nil, ErrMeetupNotFound
+		return nil, fmt.Errorf("meetup %d: %w", id, ErrNotFound)
 	}
 
 	return s.mapToResponse(m), nil
@@ -104,7 +107,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		return nil, err
 	}
 	if existing == nil {
-		return nil, ErrMeetupNotFound
+		return nil, fmt.Errorf("getting meetup: %w", err)
 	}
 
 	if existing.CreatorID != userID {
@@ -130,10 +133,13 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		existing.AddressText = *req.Address
 	}
 	if req.Coordinates != nil {
-		existing.Location = fmt.Sprintf("POINT(%f %f)", req.Coordinates.Lng, req.Coordinates.Lat)
+		existing.Location = domain.Location{
+			Lat: req.Coordinates.Lat,
+			Lng: req.Coordinates.Lng,
+		}
 	}
 
-	if err := s.repo.Update(ctx, existing); err != nil {
+	if err := s.repo.Update(ctx, existing, *req.TagIDs); err != nil {
 		return nil, err
 	}
 	return s.mapToResponse(existing), nil
@@ -145,7 +151,7 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 		return err
 	}
 	if existing == nil {
-		return ErrMeetupNotFound
+		return fmt.Errorf("getting meetup: %w", err)
 	}
 
 	if existing.CreatorID != userID {

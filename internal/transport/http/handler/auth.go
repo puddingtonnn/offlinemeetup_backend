@@ -3,7 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -12,12 +13,11 @@ import (
 
 type AuthHandler struct {
 	service *service.AuthService
+	log     *slog.Logger
 }
 
-func NewAuthHandler(service *service.AuthService) *AuthHandler {
-	return &AuthHandler{
-		service: service,
-	}
+func NewAuthHandler(service *service.AuthService, log *slog.Logger) *AuthHandler {
+	return &AuthHandler{service: service, log: log}
 }
 
 type googleLoginRequest struct {
@@ -32,23 +32,22 @@ type googleLoginRequest struct {
 // @Produce      json
 // @Param        input body googleLoginRequest true "Google ID Token"
 // @Success      200  {object}  map[string]string
-// @Failure      400  {string}  string "Error"
+// @Failure      400  {object}  response.ErrorResponse
 // @Router       /v1/auth/google [post]
 func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	var req googleLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 
 	token, err := h.service.LoginGoogle(r.Context(), req.Token)
 	if err != nil {
-		log.Printf("Error logging in: %v", err)
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	response.JSON(w, http.StatusOK, map[string]string{"token": token})
 }
 
 // TelegramCallBack TelegramCallback
@@ -60,15 +59,16 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	if q.Get("hash") == "" || q.Get("id") == "" {
-		http.Error(w, "Missing hash or id", http.StatusBadRequest)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
 	token, err := h.service.LoginTelegram(r.Context(), q)
 	if err != nil {
-		fmt.Printf("LOGIN ERROR: %v\n", err)
-		redirectError := fmt.Sprintf("meetuper://auth/error?message=%s", "auth_failed")
-		http.Redirect(w, r, redirectError, http.StatusNotFound)
+		h.log.Error("Telegram login failed", slog.String("err", err.Error()))
+
+		redirectURL := fmt.Sprintf("meetuper://auth/error?message=%s", "login_failed")
+		http.Redirect(w, r, redirectURL, http.StatusFound)
 		return
 	}
 
@@ -76,22 +76,30 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectSuccess, http.StatusFound)
 }
 
-// Me - получение своего профиля
-// @Summary      Получить мой профиль
-// @Description  Возвращает ID текущего пользователя (тест авторизации).
+// Me - получение своего аккаунта
+// @Summary      Получить данные моего аккаунта
+// @Description  Возвращает ID, email, роль и статус.
 // @Tags         Auth
 // @Security     BearerAuth
 // @Produce      json
-// @Success      200  {string}  string "Приветствие с ID"
-// @Failure      401  {string}  string "Пользователь не авторизован"
+// @Success      200  {string}  dto.UserResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
 // @Router       /v1/auth/me [get]
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "user not found in context", http.StatusInternalServerError)
+		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
-	w.Write([]byte(fmt.Sprintf("Your user ID is: %d", userID)))
+
+	userDTO, err := h.service.GetCurrentUser(r.Context(), userID)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, userDTO)
 }
 
 type devLoginRequest struct {
@@ -101,7 +109,7 @@ type devLoginRequest struct {
 func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 	var req devLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
@@ -111,11 +119,11 @@ func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.service.CreateDevToken(r.Context(), req.Email)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{
+	response.JSON(w, http.StatusOK, map[string]string{
 		"token": token,
 		"note":  "THIS IS A DEV TOKEN! DO NOT USE IN PRODUCTION",
 	})

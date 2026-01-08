@@ -86,6 +86,10 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 		q.Order("start_time ASC")
 	}
 
+	if len(filter.Tags) > 0 {
+		q.Where("meetup.id IN (SELECT meetup_id FROM meetup_tags WHERE tag_id IN (?))", bun.In(filter.Tags))
+	}
+
 	if filter.Limit > 0 {
 		q.Limit(filter.Limit)
 	}
@@ -97,9 +101,33 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 	return meetups, err
 }
 
-func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup) error {
-	_, err := r.db.NewUpdate().Model(meetup).WherePK().Exec(ctx)
-	return err
+func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error {
+	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		_, err := tx.NewUpdate().Model(meetup).WherePK().Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.NewDelete().Model((*domain.MeetupTag)(nil)).Where("meetup.id = ?", meetup.ID).Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		if len(newTagIDs) > 0 {
+			meetupTags := make([]domain.MeetupTag, len(newTagIDs))
+			for i, tagID := range newTagIDs {
+				meetupTags[i] = domain.MeetupTag{
+					MeetupID: meetup.ID,
+					TagID:    tagID,
+				}
+			}
+			_, err := tx.NewInsert().Model(&meetupTags).Exec(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *MeetupRepo) Delete(ctx context.Context, id int64) error {

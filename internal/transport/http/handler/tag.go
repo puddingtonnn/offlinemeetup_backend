@@ -1,7 +1,8 @@
 package handler
 
 import (
-	"encoding/json"
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -9,10 +10,11 @@ import (
 
 type TagHandler struct {
 	service *service.TagService
+	log     *slog.Logger
 }
 
-func NewTagHandler(service *service.TagService) *TagHandler {
-	return &TagHandler{service: service}
+func NewTagHandler(service *service.TagService, log *slog.Logger) *TagHandler {
+	return &TagHandler{service: service, log: log}
 }
 
 // List
@@ -20,16 +22,15 @@ func NewTagHandler(service *service.TagService) *TagHandler {
 // @Description Возвращает справочник всех доступных тегов/интересов.
 // @Tags        Tags
 // @Produce     json
-// @Success     200  {array}   domain.Tag
-// @Failure     500  {string}  string  "Internal Server Error"
+// @Success     200  {array}   dto.TagResponse
+// @Failure     500  {object}  response.ErrorResponse
 // @Router      /v1/tags [get]
 func (h *TagHandler) List(w http.ResponseWriter, r *http.Request) {
 	tags, err := h.service.ListTags(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		response.RespondError(w, err, h.log)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tags)
+	response.JSON(w, http.StatusOK, tags)
 }

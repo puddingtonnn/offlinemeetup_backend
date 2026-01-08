@@ -7,15 +7,15 @@ import (
 
 type User struct {
 	bun.BaseModel `bun:"table:users" swaggerignore:"true"`
-	ID            int64            `bun:",pk,autoincrement" json:"id"`
-	Email         string           `bun:",unique,nullzero" json:"email"`
-	Role          string           `bun:"default:'user'" json:"role"`
-	Status        UserStatus       `bun:",type:varchar(20),default:'active'" json:"status"`
-	CreatedAt     time.Time        `bun:",nullzero,notnull,default:current_timestamp" json:"created_at"`
-	UpdatedAt     time.Time        `bun:",nullzero,notnull,default:current_timestamp" json:"updated_at"`
-	Socials       []*SocialAccount `bun:"rel:has-many,join:id=user_id" json:"socials,omitempty"`
+	ID            int64            `bun:",pk,autoincrement"`
+	Email         string           `bun:",unique,nullzero"`
+	Role          string           `bun:"default:'user'"`
+	Status        UserStatus       `bun:",type:varchar(20),default:'active'"`
+	CreatedAt     time.Time        `bun:",nullzero,notnull,default:current_timestamp"`
+	UpdatedAt     time.Time        `bun:",nullzero,notnull,default:current_timestamp"`
+	Socials       []*SocialAccount `bun:"rel:has-many,join:id=user_id"`
 
-	Tags []*Tag `bun:"m2m:user_tags,join:User=User,join:Tag=Tag" json:"-"`
+	Tags []*Tag `bun:"m2m:user_tags,join:User=User,join:Tag=Tag"`
 }
 
 type SocialAccount struct {

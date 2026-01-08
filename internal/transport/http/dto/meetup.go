@@ -37,14 +37,15 @@ func (r *CreateMeetupRequest) Validate() map[string]string {
 }
 
 type MeetupResponse struct {
-	ID          int64       `json:"id"`
-	Title       string      `json:"title"`
-	Description string      `json:"description"`
-	StartTime   time.Time   `json:"start_time"`
-	EndTime     time.Time   `json:"end_time"`
-	Coordinates Coordinates `json:"coordinates"`
-	Address     string      `json:"address"`
-	CreatorID   int64       `json:"creator_id"`
+	ID          int64         `json:"id"`
+	Title       string        `json:"title"`
+	Description string        `json:"description"`
+	Tags        []TagResponse `json:"tags"`
+	StartTime   time.Time     `json:"start_time"`
+	EndTime     time.Time     `json:"end_time"`
+	Coordinates Coordinates   `json:"coordinates"`
+	Address     string        `json:"address"`
+	CreatorID   int64         `json:"creator_id"`
 }
 
 type MeetupFilter struct {
@@ -53,11 +54,13 @@ type MeetupFilter struct {
 	Radius int     `json:"radius"`
 	Limit  int     `json:"limit"`
 	Offset int     `json:"offset"`
+	Tags   []int64 `json:"tags"`
 }
 
 type UpdateMeetupRequest struct {
 	Title       *string      `json:"title"`
 	Description *string      `json:"description"`
+	TagIDs      *[]int64     `json:"tags"`
 	IsPublic    *bool        `json:"is_public"`
 	StartTime   *time.Time   `json:"start_time"`
 	EndTime     *time.Time   `json:"end_time"`
