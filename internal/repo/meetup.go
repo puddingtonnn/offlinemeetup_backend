@@ -52,14 +52,10 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, error) {
 	var meetup domain.Meetup
 
-	// ST_AsText конвертирует бинарную геометрию обратно в читаемый формат POINT(...)
-	// Bun автоматически замапит результат колонки location в поле Location struct
 	err := r.db.NewSelect().
 		Model(&meetup).
 		Relation("Creator").
 		Relation("Tags").
-		ExcludeColumn("location").
-		ColumnExpr("ST_AsText(meetup.location) AS location").
 		Where("meetup.id = ?", id).
 		Scan(ctx)
 
@@ -75,9 +71,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 	q := r.db.NewSelect().
 		Model(&meetups).
 		Relation("Creator").
-		Relation("Tags").
-		ExcludeColumn("location").
-		ColumnExpr("ST_AsText(meetup.location) AS location")
+		Relation("Tags")
 
 	if filter.Radius > 0 {
 		q.Where("ST_DWithin(location, ST_MakePoint(?, ?)::geography, ?)",
@@ -105,12 +99,12 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 
 func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		_, err := tx.NewUpdate().Model(meetup).WherePK().Exec(ctx)
+		_, err := tx.NewUpdate().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).WherePK().Exec(ctx)
 		if err != nil {
 			return err
 		}
 
-		_, err = tx.NewDelete().Model((*domain.MeetupTag)(nil)).Where("meetup.id = ?", meetup.ID).Exec(ctx)
+		_, err = tx.NewDelete().Model((*domain.MeetupTag)(nil)).Where("meetup_id = ?", meetup.ID).Exec(ctx)
 		if err != nil {
 			return err
 		}
