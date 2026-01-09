@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
@@ -47,15 +48,17 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 }
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
-	tagsResp := make([]dto.TagResponse, 0)
-
+	var tagsDTO []dto.TagResponse
 	if len(m.Tags) > 0 {
-		for _, t := range m.Tags {
-			tagsResp = append(tagsResp, dto.TagResponse{
+		tagsDTO = make([]dto.TagResponse, len(m.Tags))
+		for i, t := range m.Tags {
+			tagsDTO[i] = dto.TagResponse{
 				ID:   t.ID,
 				Name: t.Name,
-			})
+			}
 		}
+	} else {
+		tagsDTO = []dto.TagResponse{}
 	}
 
 	return &dto.MeetupResponse{
@@ -64,10 +67,13 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		Description: m.Description,
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
-		Coordinates: dto.Coordinates{Lat: m.Location.Lat, Lng: m.Location.Lng},
-		Address:     m.AddressText,
-		CreatorID:   m.CreatorID,
-		Tags:        tagsResp,
+		Coordinates: dto.Coordinates{
+			Lat: m.Location.Lat,
+			Lng: m.Location.Lng,
+		},
+		Address:   m.AddressText,
+		CreatorID: m.CreatorID,
+		Tags:      tagsDTO,
 	}
 }
 
