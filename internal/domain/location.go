@@ -12,7 +12,7 @@ type Location struct {
 }
 
 func (l Location) String() string {
-	return fmt.Sprintf("POINT(%f, %f)", l.Lat, l.Lng)
+	return fmt.Sprintf("POINT(%f %f)", l.Lat, l.Lng)
 }
 
 func (l Location) Scan(value interface{}) error {

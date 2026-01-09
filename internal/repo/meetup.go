@@ -24,7 +24,7 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 	}
 	defer tx.Rollback()
 
-	_, err = r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location).Returning("*, ST_AsText(location) AS location").Exec(ctx)
+	_, err = r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
 	}
@@ -46,7 +46,7 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 		return nil, fmt.Errorf("transaction commit failed: %w", err)
 	}
 
-	return meetup, nil
+	return r.GetByID(ctx, meetup.ID)
 }
 
 func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, error) {
