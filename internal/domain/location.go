@@ -3,7 +3,9 @@ package domain
 import (
 	"database/sql/driver"
 	"fmt"
-	"strings"
+
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkbhex"
 )
 
 type Location struct {
@@ -12,44 +14,40 @@ type Location struct {
 }
 
 func (l Location) String() string {
-	return fmt.Sprintf("POINT(%f %f)", l.Lat, l.Lng)
+	return fmt.Sprintf("POINT(%f %f)", l.Lng, l.Lat)
 }
 
-func (l Location) Scan(value interface{}) error {
+func (l *Location) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
 
-	var data string
+	var hexData string
 	switch v := value.(type) {
-	case []byte:
-		data = string(v)
 	case string:
-		data = v
+		hexData = v
+	case []byte:
+		hexData = string(v)
 	default:
-		return fmt.Errorf("failed to scan Location: expected string or []byte, got %T", value)
+		return fmt.Errorf("location scan: expected string/[]byte, got %T", value)
 	}
 
-	s := strings.TrimSpace(data)
-
-	if !strings.HasPrefix(strings.ToUpper(s), "POINT") {
-		return fmt.Errorf("scan error: invalid WKT format, expected POINT(...), got: %q", data)
-	}
-
-	s = s[5:]
-
-	s = strings.TrimSpace(s)
-	s = strings.Trim(s, "()")
-	s = strings.TrimSpace(s)
-
-	_, err := fmt.Sscanf(s, "%f %f", &l.Lng, &l.Lat)
+	g, err := ewkbhex.Decode(hexData)
 	if err != nil {
-		return fmt.Errorf("scan error: parsed string %q from original %q: %w", s, data, err)
+		return fmt.Errorf("location scan: wkb decode failed: %w", err)
 	}
+
+	p, ok := g.(*geom.Point)
+	if !ok {
+		return fmt.Errorf("location scan: expected Point, got %T", g)
+	}
+
+	l.Lng = p.X()
+	l.Lat = p.Y()
 
 	return nil
 }
 
 func (l Location) Value() (driver.Value, error) {
-	return l.String(), nil
+	return fmt.Sprintf("POINT(%f %f)", l.Lng, l.Lat), nil
 }

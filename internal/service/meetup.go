@@ -115,7 +115,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 	if existing == nil {
 		return nil, fmt.Errorf("getting meetup: %w", err)
 	}
-
+	fmt.Printf("DEBUG: UserID from Token: %d, CreatorID from DB: %d\n", userID, existing.CreatorID)
 	if existing.CreatorID != userID {
 		return nil, ErrForbidden
 	}
