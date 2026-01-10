@@ -50,6 +50,7 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 				r.Delete("/{id}", meetupHandler.Delete)
 				r.Post("/{id}/join", meetupHandler.Join)
 				r.Post("/{id}/leave", meetupHandler.Leave)
+				r.Get("/my", meetupHandler.My)
 			})
 		})
 

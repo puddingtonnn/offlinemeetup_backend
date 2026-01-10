@@ -24,9 +24,23 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 	}
 	defer tx.Rollback()
 
+	meetup.ParticipantsCount = 1
+
 	_, err = r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
+	}
+
+	creatorParticipant := &domain.Participant{
+		MeetupID: meetup.ID,
+		UserID:   meetup.CreatorID,
+		Role:     "organizer",
+		Status:   "approved",
+	}
+
+	_, err = tx.NewInsert().Model(creatorParticipant).Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("adding creator to participants failed: %w", err)
 	}
 
 	if len(tagIDs) > 0 {
@@ -72,6 +86,12 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 		Model(&meetups).
 		Relation("Creator").
 		Relation("Tags")
+	q.Column("meetup.*")
+
+	if filter.OnlyMy && currentUserID != 0 {
+		q.Join("JOIN participants AS p ON p.meetup_id = meetup.id")
+		q.Where("p.user_id = ?", currentUserID)
+	}
 
 	if filter.Lat != 0 && filter.Lng != 0 {
 		if filter.Radius > 0 {

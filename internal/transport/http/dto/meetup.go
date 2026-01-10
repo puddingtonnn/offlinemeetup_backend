@@ -58,6 +58,7 @@ type MeetupFilter struct {
 	Limit  int     `json:"limit"`
 	Offset int     `json:"offset"`
 	Tags   []int64 `json:"tags"`
+	OnlyMy bool    `json:"only_my"`
 }
 
 type UpdateMeetupRequest struct {

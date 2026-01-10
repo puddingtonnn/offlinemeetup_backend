@@ -259,3 +259,44 @@ func (h *MeetupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 }
+
+// My
+// @Summary      Мои митапы
+// @Description  Возвращает список митапов, где я участник
+// @Tags         Meetups
+// @Security     BearerAuth
+// @Produce      json
+// @Param       limit   query     int     false  "Лимит записей (default: 20)"
+// @Param       offset  query     int     false  "Смещение (pagination)"
+// @Success      200  {array}   dto.MeetupResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Router       /v1/meetups/my [get]
+func (h *MeetupHandler) My(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+	query := r.URL.Query()
+
+	limit, _ := strconv.Atoi(query.Get("limit"))
+	offset, _ := strconv.Atoi(query.Get("offset"))
+
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	filter := dto.MeetupFilter{
+		Limit:  limit,
+		Offset: offset,
+		OnlyMy: true,
+	}
+
+	list, err := h.service.ListMeetups(r.Context(), userID, filter)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, list)
+}

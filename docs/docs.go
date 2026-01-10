@@ -236,6 +236,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/meetups/my": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает список митапов, где я участник",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Мои митапы",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Лимит записей (default: 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (pagination)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.MeetupResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/meetups/{id}": {
             "get": {
                 "description": "Возвращает детальную информацию о митапе.",

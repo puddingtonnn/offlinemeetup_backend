@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
@@ -105,6 +106,9 @@ func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dt
 	if filter.Limit == 0 {
 		filter.Limit = 20
 	}
+	if filter.Limit > 100 {
+		filter.Limit = 100
+	}
 
 	meetups, err := s.repo.List(ctx, filter, userID)
 	if err != nil {
@@ -185,6 +189,10 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 	}
 	if meetup == nil {
 		return ErrNotFound
+	}
+
+	if time.Now().After(meetup.EndTime) {
+		return ErrMeetupFinished
 	}
 
 	return s.repo.Join(ctx, meetupID, userID)
