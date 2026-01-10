@@ -34,15 +34,21 @@ definitions:
     properties:
       address:
         type: string
+      am_i_member:
+        type: boolean
       coordinates:
         $ref: '#/definitions/dto.Coordinates'
       creator_id:
         type: integer
       description:
         type: string
+      distance_meters:
+        type: integer
       end_time:
         type: string
       id:
+        type: integer
+      participants_count:
         type: integer
       start_time:
         type: string
@@ -227,6 +233,14 @@ paths:
         in: query
         name: offset
         type: integer
+      - collectionFormat: csv
+        description: Фильтр по тегам (ID тегов через запятую)
+        in: query
+        items:
+          format: int64
+          type: integer
+        name: tags
+        type: array
       produces:
       - application/json
       responses:
@@ -362,6 +376,88 @@ paths:
       security:
       - BearerAuth: []
       summary: Обновить митап
+      tags:
+      - Meetups
+  /v1/meetups/{id}/join:
+    post:
+      description: Добавляет текущего пользователя в список участников митапа.
+      parameters:
+      - description: Meetup ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Сообщение об успехе или пустой JSON
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Митап не найден
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Уже участник
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Вступить в митап
+      tags:
+      - Meetups
+  /v1/meetups/{id}/leave:
+    post:
+      description: Удаляет текущего пользователя из участников.
+      parameters:
+      - description: Meetup ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Покинуть митап
       tags:
       - Meetups
   /v1/profile:

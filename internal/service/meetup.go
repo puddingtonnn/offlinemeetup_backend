@@ -11,9 +11,11 @@ import (
 type MeetupRepository interface {
 	Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error)
 	GetByID(ctx context.Context, id int64) (*domain.Meetup, error)
-	List(ctx context.Context, filter dto.MeetupFilter) ([]domain.Meetup, error)
+	List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error)
 	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
 	Delete(ctx context.Context, id int64) error
+	Join(ctx context.Context, meetupID, userID int64) error
+	Leave(ctx context.Context, meetupID, userID int64) error
 }
 
 type MeetupService struct {
@@ -61,6 +63,12 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		tagsDTO = []dto.TagResponse{}
 	}
 
+	var dist *int
+	if m.DistanceMeters != 0 {
+		d := int(m.DistanceMeters)
+		dist = &d
+	}
+
 	return &dto.MeetupResponse{
 		ID:          m.ID,
 		Title:       m.Title,
@@ -71,9 +79,12 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 			Lat: m.Location.Lat,
 			Lng: m.Location.Lng,
 		},
-		Address:   m.AddressText,
-		CreatorID: m.CreatorID,
-		Tags:      tagsDTO,
+		Address:           m.AddressText,
+		CreatorID:         m.CreatorID,
+		Tags:              tagsDTO,
+		ParticipantsCount: m.ParticipantsCount,
+		DistanceMeters:    dist,
+		AmIMember:         m.IsParticipant,
 	}
 }
 
@@ -90,12 +101,12 @@ func (s *MeetupService) GetMeetup(ctx context.Context, id int64) (*dto.MeetupRes
 	return s.mapToResponse(m), nil
 }
 
-func (s *MeetupService) ListMeetups(ctx context.Context, filter dto.MeetupFilter) ([]*dto.MeetupResponse, error) {
+func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dto.MeetupFilter) ([]*dto.MeetupResponse, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 20
 	}
 
-	meetups, err := s.repo.List(ctx, filter)
+	meetups, err := s.repo.List(ctx, filter, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -165,4 +176,20 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 	}
 
 	return s.repo.Delete(ctx, meetupID)
+}
+
+func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) error {
+	meetup, err := s.repo.GetByID(ctx, meetupID)
+	if err != nil {
+		return err
+	}
+	if meetup == nil {
+		return ErrNotFound
+	}
+
+	return s.repo.Join(ctx, meetupID, userID)
+}
+
+func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64) error {
+	return s.repo.Leave(ctx, meetupID, userID)
 }

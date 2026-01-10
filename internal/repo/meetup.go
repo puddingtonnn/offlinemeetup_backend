@@ -65,7 +65,7 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, err
 	return &meetup, nil
 }
 
-func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domain.Meetup, error) {
+func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error) {
 	var meetups []domain.Meetup
 
 	q := r.db.NewSelect().
@@ -73,13 +73,23 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter) ([]domai
 		Relation("Creator").
 		Relation("Tags")
 
-	if filter.Radius > 0 {
-		q.Where("ST_DWithin(location, ST_MakePoint(?, ?)::geography, ?)",
-			filter.Lng, filter.Lat, filter.Radius)
-		q.OrderExpr("ST_Distance(location, ST_MakePoint(?, ?)::geography) ASC",
+	if filter.Lat != 0 && filter.Lng != 0 {
+		if filter.Radius > 0 {
+			q.Where("ST_DWithin(location, ST_MakePoint(?, ?)::geography, ?)",
+				filter.Lng, filter.Lat, filter.Radius)
+		}
+		// Вычисление расстояния
+		q.ColumnExpr("*, ST_Distance(location, ST_MakePoint(?, ?)::geography) AS distance_meters",
 			filter.Lng, filter.Lat)
+
+		// Сортировка
+		q.Order("distance_meters ASC")
 	} else {
 		q.Order("start_time ASC")
+	}
+
+	if currentUserID != 0 {
+		q.ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = meetup.id AND p.user_id = ?) AS is_participant", currentUserID)
 	}
 
 	if len(filter.Tags) > 0 {
@@ -129,4 +139,55 @@ func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagID
 func (r *MeetupRepo) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.NewDelete().Model((*domain.Meetup)(nil)).Where("id = ?", id).Exec(ctx)
 	return err
+}
+
+func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
+	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		participant := &domain.Participant{
+			MeetupID: meetupID,
+			UserID:   userID,
+			Role:     "member",
+		}
+
+		_, err := tx.NewInsert().Model(participant).On("CONFLICT DO NOTHING").Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		res, err := tx.NewInsert().Model(participant).On("CONFLICT DO NOTHING").Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		rows, _ := res.RowsAffected()
+		if rows == 0 {
+			return nil // уже участник
+		}
+
+		_, err = tx.NewUpdate().Table("meetups").Set("participants_count = participants_count + 1").
+			Where("id = ?", meetupID).
+			Exec(ctx)
+
+		return err
+	})
+}
+
+func (r *MeetupRepo) Leave(ctx context.Context, meetupID, userID int64) error {
+	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		res, err := tx.NewDelete().Model((*domain.Participant)(nil)).Where("meetup_id = ? AND user_id = ?", meetupID, userID).Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		rows, _ := res.RowsAffected()
+		if rows == 0 {
+			return nil // не был участником
+		}
+
+		_, err = tx.NewUpdate().Table("meetups").Set("participants_count = participants_count - 1").
+			Where("id = ?", meetupID).
+			Exec(ctx)
+
+		return err
+	})
 }

@@ -28,7 +28,23 @@ type Meetup struct {
 	CreatedAt time.Time  `bun:",nullzero,notnull,default:current_timestamp"`
 	DeletedAt *time.Time `bun:",soft_delete,nullzero"`
 
+	ParticipantsCount int `bun:"participants_count"`
+
+	DistanceMeters float64 `bun:"-" scan:"distance_meters"`
+	IsParticipant  bool    `bun:"-" scan:"is_participant"`
+
 	// Relations
 	Creator *User  `bun:"rel:belongs-to,join:creator_id=id"`
 	Tags    []*Tag `bun:"m2m:meetup_tags,join:Meetup=Tag"`
+}
+
+type Participant struct {
+	bun.BaseModel `bun:"table:participants"`
+
+	MeetupID int64 `bun:",pk"`
+	UserID   int64 `bun:",pk"`
+
+	Role     string    `bun:",default:'member'"`
+	Status   string    `bun:",default:'approved'"`
+	JoinedAt time.Time `bun:",default:current_timestamp"`
 }
