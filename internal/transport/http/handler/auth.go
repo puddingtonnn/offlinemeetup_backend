@@ -3,9 +3,10 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 	"log/slog"
 	"net/http"
+
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
