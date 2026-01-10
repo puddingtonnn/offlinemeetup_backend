@@ -122,7 +122,6 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 		Limit:  limit,
 		Offset: offset,
 	}
-
 	list, err := h.service.ListMeetups(r.Context(), userID, filter)
 	if err != nil {
 		response.RespondError(w, err, h.log)
@@ -268,6 +267,7 @@ func (h *MeetupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Param       limit   query     int     false  "Лимит записей (default: 20)"
 // @Param       offset  query     int     false  "Смещение (pagination)"
+// @Param		show_past	query	bool	false	"Показать посещенные митапы (прошедшие)"
 // @Success      200  {array}   dto.MeetupResponse
 // @Failure      401  {object}  response.ErrorResponse
 // @Router       /v1/meetups/my [get]
