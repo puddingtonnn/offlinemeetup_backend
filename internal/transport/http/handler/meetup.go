@@ -2,10 +2,11 @@ package handler
 
 import (
 	"encoding/json"
-	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 	"log/slog"
 	"net/http"
 	"strconv"
+
+	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -92,10 +93,12 @@ func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 // @Param       radius  query     int     false  "Радиус поиска (в метрах)"
 // @Param       limit   query     int     false  "Лимит записей (default: 20)"
 // @Param       offset  query     int     false  "Смещение (pagination)"
+// @Param	   tags    query     []int64 false  "Фильтр по тегам (ID тегов через запятую)"
 // @Success     200     {array}   dto.MeetupResponse
 // @Failure     500     {object}  response.ErrorResponse
 // @Router      /v1/meetups [get]
 func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserIDFromContext(r.Context())
 	query := r.URL.Query()
 
 	lat, _ := strconv.ParseFloat(query.Get("lat"), 64)
@@ -120,7 +123,7 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 		Offset: offset,
 	}
 
-	list, err := h.service.ListMeetups(r.Context(), filter)
+	list, err := h.service.ListMeetups(r.Context(), userID, filter)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
@@ -196,4 +199,104 @@ func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Join
+// @Summary      Вступить в митап
+// @Description  Добавляет текущего пользователя в список участников митапа.
+// @Tags         Meetups
+// @Security     BearerAuth
+// @Produce      json
+// @Param        id   path      int  true  "Meetup ID"
+// @Success      200  {object}  map[string]string "Сообщение об успехе или пустой JSON"
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse "Митап не найден"
+// @Failure      409  {object}  response.ErrorResponse "Уже участник"
+// @Failure      500  {object}  response.ErrorResponse
+// @Router       /v1/meetups/{id}/join [post]
+func (h *MeetupHandler) Join(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	meetupID, _ := strconv.ParseInt(idStr, 10, 64)
+
+	if err := h.service.JoinMeetup(r.Context(), userID, meetupID); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// Leave
+// @Summary      Покинуть митап
+// @Description  Удаляет текущего пользователя из участников.
+// @Tags         Meetups
+// @Security     BearerAuth
+// @Produce      json
+// @Param        id   path      int  true  "Meetup ID"
+// @Success      200  {object}  map[string]string
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
+// @Failure      500  {object}  response.ErrorResponse
+// @Router       /v1/meetups/{id}/leave [post]
+func (h *MeetupHandler) Leave(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	meetupID, _ := strconv.ParseInt(idStr, 10, 64)
+
+	if err := h.service.LeaveMeetup(r.Context(), userID, meetupID); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// My
+// @Summary      Мои митапы
+// @Description  Возвращает список митапов, где я участник
+// @Tags         Meetups
+// @Security     BearerAuth
+// @Produce      json
+// @Param       limit   query     int     false  "Лимит записей (default: 20)"
+// @Param       offset  query     int     false  "Смещение (pagination)"
+// @Success      200  {array}   dto.MeetupResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Router       /v1/meetups/my [get]
+func (h *MeetupHandler) My(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+	query := r.URL.Query()
+
+	limit, _ := strconv.Atoi(query.Get("limit"))
+	offset, _ := strconv.Atoi(query.Get("offset"))
+
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	filter := dto.MeetupFilter{
+		Limit:  limit,
+		Offset: offset,
+		OnlyMy: true,
+	}
+
+	list, err := h.service.ListMeetups(r.Context(), userID, filter)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, list)
 }

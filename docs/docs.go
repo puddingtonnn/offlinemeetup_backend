@@ -165,6 +165,17 @@ const docTemplate = `{
                         "description": "Смещение (pagination)",
                         "name": "offset",
                         "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Фильтр по тегам (ID тегов через запятую)",
+                        "name": "tags",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -218,6 +229,54 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/meetups/my": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает список митапов, где я участник",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Мои митапы",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Лимит записей (default: 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (pagination)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.MeetupResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }
@@ -368,6 +427,134 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/meetups/{id}/join": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Добавляет текущего пользователя в список участников митапа.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Вступить в митап",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Meetup ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Сообщение об успехе или пустой JSON",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Митап не найден",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Уже участник",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/meetups/{id}/leave": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Удаляет текущего пользователя из участников.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Покинуть митап",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Meetup ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }
@@ -540,6 +727,9 @@ const docTemplate = `{
                 "address": {
                     "type": "string"
                 },
+                "am_i_member": {
+                    "type": "boolean"
+                },
                 "coordinates": {
                     "$ref": "#/definitions/dto.Coordinates"
                 },
@@ -549,10 +739,16 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "distance_meters": {
+                    "type": "integer"
+                },
                 "end_time": {
                     "type": "string"
                 },
                 "id": {
+                    "type": "integer"
+                },
+                "participants_count": {
                     "type": "integer"
                 },
                 "start_time": {
