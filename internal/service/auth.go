@@ -71,7 +71,6 @@ func (s *AuthService) LoginTelegram(ctx context.Context, params url.Values) (str
 func (s *AuthService) validateTelegramHash(params url.Values) bool {
 	receivedHash := params.Get("hash")
 	if receivedHash == "" {
-		fmt.Println("DEBUG: No hash found in params")
 		return false
 	}
 

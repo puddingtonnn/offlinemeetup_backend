@@ -82,11 +82,9 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, err
 func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error) {
 	var meetups []domain.Meetup
 
-	q := r.db.NewSelect().
-		Model(&meetups).
-		Relation("Creator").
-		Relation("Tags")
-	q.Column("meetup.*")
+	q := r.db.NewSelect().Model(&meetups)
+	q.Relation("Creator")
+	q.Relation("Tags")
 
 	if filter.OnlyMy && currentUserID != 0 {
 		q.Join("JOIN participants AS p ON p.meetup_id = meetup.id")
@@ -95,11 +93,11 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 
 	if filter.Lat != 0 && filter.Lng != 0 {
 		if filter.Radius > 0 {
-			q.Where("ST_DWithin(location, ST_MakePoint(?, ?)::geography, ?)",
+			q.Where("ST_DWithin(?TableAlias.location, ST_MakePoint(?, ?)::geography, ?)",
 				filter.Lng, filter.Lat, filter.Radius)
 		}
 		// Вычисление расстояния
-		q.ColumnExpr("*, ST_Distance(location, ST_MakePoint(?, ?)::geography) AS distance_meters",
+		q.ColumnExpr("meetup.*, ST_Distance(location, ST_MakePoint(?, ?)::geography) AS distance_meters",
 			filter.Lng, filter.Lat)
 
 		// Сортировка

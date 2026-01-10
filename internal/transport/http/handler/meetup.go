@@ -122,7 +122,6 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 		Limit:  limit,
 		Offset: offset,
 	}
-
 	list, err := h.service.ListMeetups(r.Context(), userID, filter)
 	if err != nil {
 		response.RespondError(w, err, h.log)
