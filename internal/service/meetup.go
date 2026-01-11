@@ -85,7 +85,7 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		Tags:              tagsDTO,
 		ParticipantsCount: m.ParticipantsCount,
 		DistanceMeters:    dist,
-		AmIMember:         m.IsParticipant,
+		IsMember:          m.IsParticipant,
 	}
 }
 

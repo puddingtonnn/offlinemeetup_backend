@@ -48,7 +48,7 @@ type MeetupResponse struct {
 	CreatorID         int64         `json:"creator_id"`
 	ParticipantsCount int           `json:"participants_count"`
 	DistanceMeters    *int          `json:"distance_meters,omitempty"`
-	AmIMember         bool          `json:"am_i_member"`
+	IsMember          bool          `json:"is_member"`
 }
 
 type MeetupFilter struct {

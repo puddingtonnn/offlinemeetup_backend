@@ -281,15 +281,20 @@ func (h *MeetupHandler) My(w http.ResponseWriter, r *http.Request) {
 
 	limit, _ := strconv.Atoi(query.Get("limit"))
 	offset, _ := strconv.Atoi(query.Get("offset"))
+	var showPast bool
+	if query.Get("show_past") == "true" {
+		showPast = true
+	}
 
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
 	filter := dto.MeetupFilter{
-		Limit:  limit,
-		Offset: offset,
-		OnlyMy: true,
+		Limit:    limit,
+		Offset:   offset,
+		OnlyMy:   true,
+		ShowPast: showPast,
 	}
 
 	list, err := h.service.ListMeetups(r.Context(), userID, filter)
