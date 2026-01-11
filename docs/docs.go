@@ -125,6 +125,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/geo/suggest": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Ищет адреса и возвращает координаты",
+                "tags": [
+                    "Geo"
+                ],
+                "summary": "Подсказки адресов (DaData)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Часть адреса (например: москва лен)",
+                        "name": "address_part",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.AddressSuggestion"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/meetups": {
             "get": {
                 "description": "Возвращает список митапов. Если переданы lat/lng/radius — ищет ближайшие. Иначе сортирует по времени.",
@@ -262,6 +296,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "Смещение (pagination)",
                         "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Показать посещенные митапы (прошедшие)",
+                        "name": "show_past",
                         "in": "query"
                     }
                 ],
@@ -673,6 +713,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dto.AddressSuggestion": {
+            "type": "object",
+            "properties": {
+                "lat": {
+                    "type": "number"
+                },
+                "lng": {
+                    "type": "number"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.Coordinates": {
             "type": "object",
             "properties": {
@@ -727,9 +781,6 @@ const docTemplate = `{
                 "address": {
                     "type": "string"
                 },
-                "am_i_member": {
-                    "type": "boolean"
-                },
                 "coordinates": {
                     "$ref": "#/definitions/dto.Coordinates"
                 },
@@ -747,6 +798,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "is_member": {
+                    "type": "boolean"
                 },
                 "participants_count": {
                     "type": "integer"

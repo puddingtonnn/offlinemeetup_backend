@@ -13,7 +13,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
-func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, meetupHandler *handler.MeetupHandler, tagHandler *handler.TagHandler, cfg *config.Config) *chi.Mux {
+func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, meetupHandler *handler.MeetupHandler, tagHandler *handler.TagHandler, geoHandler *handler.GeoHandler, cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
@@ -63,6 +63,7 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 				r.Get("/", profileHandler.GetMyProfile)
 				r.Put("/", profileHandler.UpdateMyProfile)
 			})
+			r.Get("/geo/suggest", geoHandler.Suggest)
 		})
 	})
 

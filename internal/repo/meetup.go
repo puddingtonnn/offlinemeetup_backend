@@ -3,11 +3,10 @@ package repo
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
+	"time"
 )
 
 type MeetupRepo struct {
@@ -84,8 +83,19 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	var meetups []domain.Meetup
 
 	q := r.db.NewSelect().Model(&meetups)
+	q.Column("meetup.*")
 	q.Relation("Creator")
 	q.Relation("Tags")
+
+	if filter.ShowPast {
+		q.Where("meetup.end_time < ?", time.Now())
+		q.Order("meetup.end_time DESC")
+	} else {
+		q.Where("meetup.end_time > ?", time.Now())
+		if filter.Lat == 0 {
+			q.Order("meetup.start_time ASC")
+		}
+	}
 
 	if filter.OnlyMy && currentUserID != 0 {
 		q.Join("JOIN participants AS p ON p.meetup_id = meetup.id")
@@ -120,16 +130,6 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	}
 	if filter.Offset > 0 {
 		q.Offset(filter.Offset)
-	}
-
-	if filter.ShowPast {
-		q.Where("meetup.end_time < ?", time.Now())
-		q.Order("meetup.end_time DESC")
-	} else {
-		q.Where("meetup.end_time > ?", time.Now())
-		if filter.Radius == 0 {
-			q.Order("meetup.start_time ASC")
-		}
 	}
 
 	err := q.Scan(ctx)
