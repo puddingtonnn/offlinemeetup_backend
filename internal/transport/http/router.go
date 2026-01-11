@@ -39,8 +39,12 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 		})
 
 		r.Route("/meetups", func(r chi.Router) {
-			r.Get("/", meetupHandler.List)
-			r.Get("/{id}", meetupHandler.GetByID)
+			r.Group(func(r chi.Router) {
+				r.Use(authMiddleware.UserIdentityMiddleware(cfg))
+
+				r.Get("/", meetupHandler.List)
+				r.Get("/{id}", meetupHandler.GetByID)
+			})
 
 			r.Group(func(r chi.Router) {
 				r.Use(authMiddleware.AuthMiddleware(cfg))

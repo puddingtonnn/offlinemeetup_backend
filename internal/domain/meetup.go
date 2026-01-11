@@ -31,7 +31,7 @@ type Meetup struct {
 	ParticipantsCount int `bun:"participants_count"`
 
 	DistanceMeters float64 `bun:"distance_meters,scanonly"`
-	IsParticipant  bool    `bun:"is_participant,scanonly"`
+	IsMember       bool    `bun:"is_member,scanonly"`
 
 	// Relations
 	Creator *User  `bun:"rel:belongs-to,join:creator_id=id"`

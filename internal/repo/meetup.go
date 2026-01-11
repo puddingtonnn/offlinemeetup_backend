@@ -60,22 +60,28 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 		return nil, fmt.Errorf("transaction commit failed: %w", err)
 	}
 
-	return r.GetByID(ctx, meetup.ID)
+	return r.GetByID(ctx, meetup.ID, meetup.CreatorID)
 }
 
-func (r *MeetupRepo) GetByID(ctx context.Context, id int64) (*domain.Meetup, error) {
+func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64) (*domain.Meetup, error) {
 	var meetup domain.Meetup
 
-	err := r.db.NewSelect().
+	q := r.db.NewSelect().
 		Model(&meetup).
+		Column("meetup.*").
 		Relation("Creator").
 		Relation("Tags").
-		Where("meetup.id = ?", id).
-		Scan(ctx)
+		Where("meetup.id = ?", id)
 
+	if currentUserID != 0 {
+		q.ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = ?TableAlias.id AND p.user_id = ?) AS is_member", currentUserID)
+	}
+
+	err := q.Scan(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	return &meetup, nil
 }
 
@@ -118,7 +124,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	}
 
 	if currentUserID != 0 {
-		q.ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = meetup.id AND p.user_id = ?) AS is_participant", currentUserID)
+		q.ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = meetup.id AND p.user_id = ?) AS is_member", currentUserID)
 	}
 
 	if len(filter.Tags) > 0 {
