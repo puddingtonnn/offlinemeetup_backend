@@ -11,7 +11,7 @@ import (
 
 type MeetupRepository interface {
 	Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error)
-	GetByID(ctx context.Context, id int64) (*domain.Meetup, error)
+	GetByID(ctx context.Context, id int64, currentUserID int64) (*domain.Meetup, error)
 	List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error)
 	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
 	Delete(ctx context.Context, id int64) error
@@ -85,12 +85,12 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		Tags:              tagsDTO,
 		ParticipantsCount: m.ParticipantsCount,
 		DistanceMeters:    dist,
-		IsMember:          m.IsParticipant,
+		IsMember:          m.IsMember,
 	}
 }
 
-func (s *MeetupService) GetMeetup(ctx context.Context, id int64) (*dto.MeetupResponse, error) {
-	m, err := s.repo.GetByID(ctx, id)
+func (s *MeetupService) GetMeetup(ctx context.Context, id int64, userID int64) (*dto.MeetupResponse, error) {
+	m, err := s.repo.GetByID(ctx, id, userID)
 
 	if err != nil {
 		return nil, fmt.Errorf("getting meetup: %w", err)
@@ -123,7 +123,7 @@ func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dt
 }
 
 func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID int64, req dto.UpdateMeetupRequest) (*dto.MeetupResponse, error) {
-	existing, err := s.repo.GetByID(ctx, meetupID)
+	existing, err := s.repo.GetByID(ctx, meetupID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 }
 
 func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID int64) error {
-	existing, err := s.repo.GetByID(ctx, meetupID)
+	existing, err := s.repo.GetByID(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}
@@ -182,7 +182,7 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 }
 
 func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) error {
-	meetup, err := s.repo.GetByID(ctx, meetupID)
+	meetup, err := s.repo.GetByID(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}

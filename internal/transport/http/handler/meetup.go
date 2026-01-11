@@ -74,7 +74,9 @@ func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.service.GetMeetup(r.Context(), id)
+	userID, _ := middleware.GetUserIDFromContext(r.Context())
+
+	resp, err := h.service.GetMeetup(r.Context(), id, userID)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
