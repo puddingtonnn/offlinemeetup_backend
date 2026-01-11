@@ -1,5 +1,14 @@
 basePath: /
 definitions:
+  dto.AddressSuggestion:
+    properties:
+      lat:
+        type: number
+      lng:
+        type: number
+      value:
+        type: string
+    type: object
   dto.Coordinates:
     properties:
       lat:
@@ -34,8 +43,6 @@ definitions:
     properties:
       address:
         type: string
-      am_i_member:
-        type: boolean
       coordinates:
         $ref: '#/definitions/dto.Coordinates'
       creator_id:
@@ -48,6 +55,8 @@ definitions:
         type: string
       id:
         type: integer
+      is_member:
+        type: boolean
       participants_count:
         type: integer
       start_time:
@@ -208,6 +217,27 @@ paths:
       summary: Вход через Telegram
       tags:
       - Auth
+  /v1/geo/suggest:
+    get:
+      description: Ищет адреса и возвращает координаты
+      parameters:
+      - description: 'Часть адреса (например: москва лен)'
+        in: query
+        name: address_part
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.AddressSuggestion'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Подсказки адресов (DaData)
+      tags:
+      - Geo
   /v1/meetups:
     get:
       description: Возвращает список митапов. Если переданы lat/lng/radius — ищет
@@ -472,6 +502,10 @@ paths:
         in: query
         name: offset
         type: integer
+      - description: Показать посещенные митапы (прошедшие)
+        in: query
+        name: show_past
+        type: boolean
       produces:
       - application/json
       responses:

@@ -35,13 +35,15 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	profileService := service.NewProfileService(profileRepo, userRepo)
 	meetupService := service.NewMeetupService(meetupRepo)
 	tagService := service.NewTagService(tagRepo)
+	geoService := service.NewGeoService(cfg.DaDataToken)
 
 	authHandler := handler.NewAuthHandler(authService, log)
 	profileHandler := handler.NewProfileHandler(profileService, log)
 	meetupHandler := handler.NewMeetupHandler(meetupService, log)
 	tagHandler := handler.NewTagHandler(tagService, log)
+	geoHandler := handler.NewGeoHandler(geoService)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, cfg)
 
 	return &App{
 		cfg:    cfg,

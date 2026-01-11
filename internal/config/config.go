@@ -13,6 +13,7 @@ type Config struct {
 	TelegramBotToken string
 	JWTSecret        string
 	Env              string
+	DaDataToken      string
 }
 
 func Load() (*Config, error) {
@@ -25,6 +26,7 @@ func Load() (*Config, error) {
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 		JWTSecret:        os.Getenv("JWT_SECRET_KEY"),
 		Env:              os.Getenv("APP_ENV"),
+		DaDataToken:      os.Getenv("DADATA_TOKEN"),
 	}
 
 	if cfg.AppPort == "" {
@@ -45,6 +47,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Env == "" {
 		cfg.Env = "local"
+	}
+	if cfg.DaDataToken == "" {
+		fmt.Println("WARNING: DADATA_TOKEN is empty")
 	}
 
 	return cfg, nil
