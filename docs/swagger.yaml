@@ -4,7 +4,7 @@ definitions:
     properties:
       lat:
         type: number
-      lng:
+      lon:
         type: number
       value:
         type: string
@@ -224,7 +224,14 @@ paths:
       - description: 'Часть адреса (например: москва лен)'
         in: query
         name: address_part
-        required: true
+        type: string
+      - description: Широта
+        in: query
+        name: lat
+        type: string
+      - description: Долгота
+        in: query
+        name: lon
         type: string
       responses:
         "200":

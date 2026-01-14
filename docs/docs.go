@@ -142,8 +142,19 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Часть адреса (например: москва лен)",
                         "name": "address_part",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Широта",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Долгота",
+                        "name": "lon",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -719,7 +730,7 @@ const docTemplate = `{
                 "lat": {
                     "type": "number"
                 },
-                "lng": {
+                "lon": {
                     "type": "number"
                 },
                 "value": {
