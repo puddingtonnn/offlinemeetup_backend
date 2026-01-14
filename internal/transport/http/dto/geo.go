@@ -3,7 +3,7 @@ package dto
 type AddressSuggestion struct {
 	Value string  `json:"value"`
 	Lat   float64 `json:"lat"`
-	Lng   float64 `json:"lng"`
+	Lon   float64 `json:"lon"`
 }
 
 type DaDataResponse struct {
