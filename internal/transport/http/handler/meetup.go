@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 
@@ -95,7 +96,7 @@ func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 // @Param       radius  query     int     false  "Радиус поиска (в метрах)"
 // @Param       limit   query     int     false  "Лимит записей (default: 20)"
 // @Param       offset  query     int     false  "Смещение (pagination)"
-// @Param	   tags    query     []int64 false  "Фильтр по тегам (ID тегов через запятую)"
+// @Param 		tags	query	  string  false  "ID тегов через запятую (например: 1,2,5)"
 // @Success     200     {array}   dto.MeetupResponse
 // @Failure     500     {object}  response.ErrorResponse
 // @Router      /v1/meetups [get]
@@ -117,12 +118,26 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 		limit = 20
 	}
 
+	tagsStr := query.Get("tags") // "1,3,5"
+	var tagIDs []int64
+
+	if tagsStr != "" {
+		parts := strings.Split(tagsStr, ",")
+		for _, p := range parts {
+			id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+			if err == nil && id > 0 {
+				tagIDs = append(tagIDs, id)
+			}
+		}
+	}
+
 	filter := dto.MeetupFilter{
 		Lat:    lat,
 		Lng:    lng,
 		Radius: radius,
 		Limit:  limit,
 		Offset: offset,
+		Tags:   tagIDs,
 	}
 
 	if userID != 0 {

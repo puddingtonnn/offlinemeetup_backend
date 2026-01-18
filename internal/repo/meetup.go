@@ -138,7 +138,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	}
 
 	if len(filter.Tags) > 0 {
-		q.Where("meetup.id IN (SELECT meetup_id FROM meetup_tags WHERE tag_id IN (?))", bun.In(filter.Tags))
+		q.Where("EXISTS (SELECT 1 FROM meetup_tags mt WHERE mt.meetup_id = meetup.id AND mt.tag_id IN (?))", bun.In(filter.Tags))
 	}
 
 	if filter.Limit > 0 {
@@ -187,52 +187,68 @@ func (r *MeetupRepo) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
-	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		participant := &domain.Participant{
-			MeetupID: meetupID,
-			UserID:   userID,
-			Role:     "member",
-		}
-
-		_, err := tx.NewInsert().Model(participant).On("CONFLICT DO NOTHING").Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		res, err := tx.NewInsert().Model(participant).On("CONFLICT DO NOTHING").Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		rows, _ := res.RowsAffected()
-		if rows == 0 {
-			return nil // уже участник
-		}
-
-		_, err = tx.NewUpdate().Table("meetups").Set("participants_count = participants_count + 1").
-			Where("id = ?", meetupID).
-			Exec(ctx)
-
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
-	})
+	}
+	defer tx.Rollback()
+
+	participant := &domain.Participant{
+		MeetupID: meetupID,
+		UserID:   userID,
+		Role:     "participant",
+		Status:   "approved",
+	}
+
+	_, err = tx.NewInsert().Model(participant).Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.NewUpdate().
+		Table("meetups").
+		Set("participants_count = participants_count + 1").
+		Where("id = ?", meetupID).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (r *MeetupRepo) Leave(ctx context.Context, meetupID, userID int64) error {
-	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		res, err := tx.NewDelete().Model((*domain.Participant)(nil)).Where("meetup_id = ? AND user_id = ?", meetupID, userID).Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		rows, _ := res.RowsAffected()
-		if rows == 0 {
-			return nil // не был участником
-		}
-
-		_, err = tx.NewUpdate().Table("meetups").Set("participants_count = participants_count - 1").
-			Where("id = ?", meetupID).
-			Exec(ctx)
-
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
-	})
+	}
+	defer tx.Rollback()
+
+	res, err := tx.NewDelete().
+		Table("participants").
+		Where("meetup_id = ? AND user_id = ?", meetupID, userID).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return nil
+	}
+
+	_, err = tx.NewUpdate().
+		Table("meetups").
+		Set("participants_count = participants_count - 1").
+		Where("id = ? AND participants_count > 0", meetupID).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
