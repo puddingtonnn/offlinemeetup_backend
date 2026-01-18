@@ -62,7 +62,6 @@ func (s *GeoService) sendRequest(url string, bodyData interface{}) ([]dto.Addres
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	fmt.Println("DEBUG DADATA RAW:", string(bodyBytes))
 
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 

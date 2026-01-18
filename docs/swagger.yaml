@@ -272,14 +272,10 @@ paths:
         in: query
         name: offset
         type: integer
-      - collectionFormat: csv
-        description: Фильтр по тегам (ID тегов через запятую)
+      - description: 'ID тегов через запятую (например: 1,2,5)'
         in: query
-        items:
-          format: int64
-          type: integer
         name: tags
-        type: array
+        type: string
       produces:
       - application/json
       responses:

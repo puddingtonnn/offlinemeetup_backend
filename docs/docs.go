@@ -212,13 +212,8 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "array",
-                        "items": {
-                            "type": "integer",
-                            "format": "int64"
-                        },
-                        "collectionFormat": "csv",
-                        "description": "Фильтр по тегам (ID тегов через запятую)",
+                        "type": "string",
+                        "description": "ID тегов через запятую (например: 1,2,5)",
                         "name": "tags",
                         "in": "query"
                     }
