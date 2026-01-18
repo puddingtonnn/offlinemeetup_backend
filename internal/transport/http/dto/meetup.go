@@ -53,14 +53,16 @@ type MeetupResponse struct {
 }
 
 type MeetupFilter struct {
-	Lat      float64 `json:"lat"`
-	Lng      float64 `json:"lng"`
-	Radius   int     `json:"radius"`
-	Limit    int     `json:"limit"`
-	Offset   int     `json:"offset"`
-	Tags     []int64 `json:"tags"`
-	OnlyMy   bool    `json:"only_my"`
-	ShowPast bool    `json:"show_past"`
+	Lat         float64 `json:"lat"`
+	Lng         float64 `json:"lng"`
+	Radius      int     `json:"radius"`
+	Limit       int     `json:"limit"`
+	Offset      int     `json:"offset"`
+	Tags        []int64 `json:"tags"`
+	OnlyMy      bool    `json:"only_my"`
+	ShowPast    bool    `json:"show_past"`
+	ExcludeOwn  bool    `json:"exclude_own"`
+	OnlyCreated bool    `json:"only_created"`
 }
 
 type UpdateMeetupRequest struct {
