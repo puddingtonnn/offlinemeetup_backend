@@ -33,6 +33,8 @@ type Meetup struct {
 	DistanceMeters float64 `bun:"distance_meters,scanonly"`
 	IsMember       bool    `bun:"is_member,scanonly"`
 
+	CoverImage string `bun:"cover_image"`
+
 	// Relations
 	Creator *User  `bun:"rel:belongs-to,join:creator_id=id"`
 	Tags    []*Tag `bun:"m2m:meetup_tags,join:Meetup=Tag"`

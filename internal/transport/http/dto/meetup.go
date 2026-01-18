@@ -49,6 +49,7 @@ type MeetupResponse struct {
 	ParticipantsCount int           `json:"participants_count"`
 	DistanceMeters    *int          `json:"distance_meters,omitempty"`
 	IsMember          bool          `json:"is_member"`
+	CoverImage        string        `json:"cover_image"`
 }
 
 type MeetupFilter struct {
