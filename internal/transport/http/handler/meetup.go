@@ -124,6 +124,11 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 		Limit:  limit,
 		Offset: offset,
 	}
+
+	if userID != 0 {
+		filter.ExcludeOwn = true
+	}
+
 	list, err := h.service.ListMeetups(r.Context(), userID, filter)
 	if err != nil {
 		response.RespondError(w, err, h.log)
@@ -263,10 +268,11 @@ func (h *MeetupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 
 // My
 // @Summary      Мои митапы
-// @Description  Возвращает список митапов, где я участник
+// @Description  Возвращает митапы текущего пользователя. По умолчанию (или filter=joined) — куда записан. Если filter=created — которые организовал.
 // @Tags         Meetups
 // @Security     BearerAuth
 // @Produce      json
+// @Param        filter     query     string  false  "Фильтр роли: 'joined' (участник) или 'created' (организатор)" Enums(joined, created)
 // @Param       limit   query     int     false  "Лимит записей (default: 20)"
 // @Param       offset  query     int     false  "Смещение (pagination)"
 // @Param		show_past	query	bool	false	"Показать посещенные митапы (прошедшие)"
@@ -295,8 +301,13 @@ func (h *MeetupHandler) My(w http.ResponseWriter, r *http.Request) {
 	filter := dto.MeetupFilter{
 		Limit:    limit,
 		Offset:   offset,
-		OnlyMy:   true,
 		ShowPast: showPast,
+	}
+
+	if query.Get("filter") == "created" {
+		filter.OnlyCreated = true
+	} else {
+		filter.OnlyMy = true
 	}
 
 	list, err := h.service.ListMeetups(r.Context(), userID, filter)

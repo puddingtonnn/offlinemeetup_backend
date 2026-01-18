@@ -93,19 +93,29 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	q.Relation("Creator")
 	q.Relation("Tags")
 
+	if filter.OnlyCreated && currentUserID != 0 {
+		q.Where("meetup.creator_id = ?", currentUserID)
+	} else if filter.OnlyMy && currentUserID != 0 {
+		q.Join("JOIN participants AS p ON p.meetup_id = meetup.id")
+		q.Where("p.user_id = ?", currentUserID)
+	} else if filter.ExcludeOwn && currentUserID != 0 {
+		q.Where("meetup.creator_id != ?", currentUserID)
+	}
+
 	if filter.ShowPast {
 		q.Where("meetup.end_time < ?", time.Now())
 		q.Order("meetup.end_time DESC")
 	} else {
 		q.Where("meetup.end_time > ?", time.Now())
-		if filter.Lat == 0 {
+		if filter.OnlyMy {
+			q.Order("p.joined_at DESC")
+
+		} else if filter.OnlyCreated {
+			q.Order("meetup.id DESC")
+
+		} else if filter.Lat == 0 {
 			q.Order("meetup.start_time ASC")
 		}
-	}
-
-	if filter.OnlyMy && currentUserID != 0 {
-		q.Join("JOIN participants AS p ON p.meetup_id = meetup.id")
-		q.Where("p.user_id = ?", currentUserID)
 	}
 
 	if filter.Lat != 0 && filter.Lng != 0 {

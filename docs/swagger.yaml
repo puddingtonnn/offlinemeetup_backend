@@ -45,6 +45,8 @@ definitions:
         type: string
       coordinates:
         $ref: '#/definitions/dto.Coordinates'
+      cover_image:
+        type: string
       creator_id:
         type: integer
       description:
@@ -499,8 +501,16 @@ paths:
       - Meetups
   /v1/meetups/my:
     get:
-      description: Возвращает список митапов, где я участник
+      description: Возвращает митапы текущего пользователя. По умолчанию (или filter=joined)
+        — куда записан. Если filter=created — которые организовал.
       parameters:
+      - description: 'Фильтр роли: ''joined'' (участник) или ''created'' (организатор)'
+        enum:
+        - joined
+        - created
+        in: query
+        name: filter
+        type: string
       - description: 'Лимит записей (default: 20)'
         in: query
         name: limit

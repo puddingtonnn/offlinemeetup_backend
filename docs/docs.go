@@ -288,7 +288,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Возвращает список митапов, где я участник",
+                "description": "Возвращает митапы текущего пользователя. По умолчанию (или filter=joined) — куда записан. Если filter=created — которые организовал.",
                 "produces": [
                     "application/json"
                 ],
@@ -297,6 +297,16 @@ const docTemplate = `{
                 ],
                 "summary": "Мои митапы",
                 "parameters": [
+                    {
+                        "enum": [
+                            "joined",
+                            "created"
+                        ],
+                        "type": "string",
+                        "description": "Фильтр роли: 'joined' (участник) или 'created' (организатор)",
+                        "name": "filter",
+                        "in": "query"
+                    },
                     {
                         "type": "integer",
                         "description": "Лимит записей (default: 20)",
@@ -794,6 +804,9 @@ const docTemplate = `{
                 },
                 "coordinates": {
                     "$ref": "#/definitions/dto.Coordinates"
+                },
+                "cover_image": {
+                    "type": "string"
                 },
                 "creator_id": {
                     "type": "integer"
