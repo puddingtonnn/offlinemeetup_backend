@@ -1,155 +1,110 @@
-# offlinemeetup_backend
+# Meetuper Backend API
 
-Бэкенд для мобильного приложения "Meetuper". Сервис предоставляет REST API для организации оффлайн-встреч, поиска событий по геолокации и управления профилями пользователей.
+A robust REST API backend for the "Meetuper" mobile application, designed to help users organize, discover, and join offline meetups. Built with **Go**, this service leverages Clean Architecture principles and utilizes **PostGIS** for efficient spatial queries and location-based event discovery.
 
-## Стек технологий
+## Tech Stack
 
-* **Язык:** Go 1.24
-* **Веб-фреймворк:** [chi](https://github.com/go-chi/chi)
-* **База данных:** PostgreSQL 16 + расширение **PostGIS** (гео-индексы)
+* **Language:** Go 1.24
+* **Web Framework:** [chi](https://github.com/go-chi/chi) (lightweight, idiomatic router)
+* **Database:** PostgreSQL 16 + **PostGIS** extension (for geographical data)
 * **ORM / Query Builder:** [Bun](https://github.com/uptrace/bun)
-* **Миграции:** [Goose](https://github.com/pressly/goose)
-* **Инфраструктура:** Docker, Docker Compose, GitHub Actions
-* **Документация:** Swagger (swaggo)
+* **Migrations:** [Goose](https://github.com/pressly/goose)
+* **Infrastructure:** Docker, Docker Compose, GitHub Actions (CI/CD)
+* **Documentation:** Swagger (swaggo)
 
-## Архитектура
+## Architecture
 
-Проект построен по принципам чистой архитектуры (Clean Architecture) со стандартной слоистой структурой:
+The project strictly follows **Clean Architecture** patterns, separating concerns into distinct layers to ensure maintainability, testability, and scalability:
 
-* `cmd/app/` — Точка входа (`main.go`). Инициализация конфига, БД и запуск сервера.
-* `internal/transport/http/` — Слой HTTP. Роутинг, хендлеры и middleware (auth, logging).
-* `internal/service/` — Бизнес-логика. Валидация данных, взаимодействие с внешними API (DaData, Google Auth).
-* `internal/repo/` — Слой данных. Работа с БД через Bun.
-* `internal/domain/` — Основные сущности приложения (Meetup, User, Profile).
-* `internal/config/` — Загрузка конфигурации из env.
+* `cmd/app/` — Entry point. Handles configuration initialization, DB connection, and server startup.
+* `internal/transport/http/` — Presentation layer. Contains HTTP routing, handlers, middleware (auth, logging), and DTOs.
+* `internal/service/` — Business logic layer. Handles core application rules, validations, and external API integrations (DaData, Google/Telegram Auth).
+* `internal/repo/` — Data access layer. Manages database interactions using the Bun ORM.
+* `internal/domain/` — Core business entities and domain models (Meetup, User, Profile, Location).
+* `internal/config/` — Environment-based configuration management.
 
-## Основные возможности
+## Key Features
 
-* **Авторизация:**
-* Вход через Google (ID Token).
-* Вход через Telegram (Login Widget).
-* JWT-токены для сессий.
+* **Spatial Search & Geolocation:**
+  * Integrates with the **DaData API** for address suggestions and geocoding.
+  * Uses PostGIS `ST_DWithin` and `ST_Distance` to query meetups within a specific radius of the user's coordinates.
+* **Authentication & Authorization:**
+  * Implements JWT-based session management.
+  * Supports OAuth2 via Google ID Tokens and Telegram Login Widget integration.
+* **Meetup Management:**
+  * Full CRUD operations for events.
+  * Concurrency-safe participant registration (Join/Leave mechanics).
+* **Automated CI/CD:**
+  * Configured GitHub Actions pipeline for building Docker images, pushing to Docker Hub, and deploying to a VPS via SSH.
 
+## Getting Started
 
-* **Митапы:**
-* CRUD операции (создание, чтение, обновление, удаление).
-* Гео-поиск: поиск ближайших митапов в радиусе (используется `ST_DWithin` и `ST_Distance`).
-* Участие в митапах (Join/Leave).
-
-
-* **Гео-сервисы:**
-* Подсказки адресов через API DaData.
-* Преобразование адреса в координаты.
-
-
-* **Профиль:**
-* Редактирование профиля, управление тегами (интересами).
-
-
-
-## Установка и запуск
-
-### Предварительные требования
-
+### Prerequisites
 * Docker & Docker Compose
-* Go 1.24 (для локальной разработки без Docker)
+* Go 1.24 (for local execution without Docker)
 * Make
 
-### Конфигурация
-
-Перед запуском необходимо создать файл `.env` в корне проекта. Пример переменных на основе `internal/config/config.go`:
+### Configuration
+Create a `.env` file in the root directory. You can use the following template:
 
 ```env
 APP_PORT=8080
 APP_ENV=local  # local, dev, prod
 
-# База данных
+# Database Configuration
 DB_DSN=postgres://user:password@localhost:5432/meetuper_db?sslmode=disable
 POSTGRES_USER=user
 POSTGRES_PASSWORD=password
 POSTGRES_DB=meetuper_db
 
-# Авторизация
+# Authentication secrets
 JWT_SECRET_KEY=your_secret_key
 GOOGLE_WEB_CLIENT_ID=your_google_client_id
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 
-# Внешние API
+# External APIs
 DADATA_TOKEN=your_dadata_api_key
-
 ```
 
-### Запуск в Docker (рекомендуемый)
-
-Разворачивает приложение, PostgreSQL (PostGIS) и Redis.
+### Running with Docker (Recommended)
+The easiest way to spin up the application along with PostgreSQL (PostGIS) and Redis is via Docker Compose:
 
 ```bash
 make up
-
 ```
+The API will be available at `http://localhost:8080`.
 
-Приложение будет доступно по адресу `http://localhost:8080`.
+### Running Locally (Development)
+If you prefer to run the Go application directly on your host machine:
 
-### Локальный запуск (для разработки)
-
-Если требуется запустить Go-приложение вне контейнера (БД всё равно лучше поднять в Docker):
-
-1. Поднять только базы:
+1. Start only the infrastructure containers (DB, Redis):
 ```bash
 docker-compose -f docker-compose.dev.yml up -d meetuper_db meetuper_redis
-
 ```
 
-
-2. Накатить миграции (при запуске через `main.go` миграции накатываются автоматически, но можно и вручную):
+2. Run database migrations:
 ```bash
 make migration
-
 ```
 
-
-3. Запустить приложение:
+3. Start the application:
 ```bash
 make run
-
 ```
 
+## API Documentation
 
-
-## API Документация
-
-В проекте используется Swagger. После запуска сервера документация доступна по адресу:
+This project uses Swagger for API documentation. Once the server is running, navigate to:
 `http://localhost:8080/swagger/index.html`
 
-Для перегенерации документации после изменения кода:
-
+To regenerate the documentation after making changes to the handlers, run:
 ```bash
 make swag
-
 ```
 
-## Деплой
-
-В репозитории настроен CI/CD через GitHub Actions (`.github/workflows/deploy.yml`).
-Пайплайн:
-
-1. Собирает Docker-образ.
-2. Пушит в Docker Hub.
-3. Подключается по SSH к VPS.
-4. Обновляет контейнеры через `docker compose`.
-
-**Важно:** Для продакшена используется `docker-compose.yml`, который настроен на работу с Traefik (метки `traefik.enable=true`, TLS через Let's Encrypt).
-
-## Особенности и ограничения
-
-1. **PostGIS:** Для работы БД требуется образ `postgis/postgis:16-3.4-alpine`. Стандартный образ Postgres не подойдет, так как используются гео-типы `GEOGRAPHY(POINT, 4326)`.
-2. **DaData:** Для работы подсказок адресов (`/v1/geo/suggest`) обязателен валидный токен DaData. Без него эндпоинт будет возвращать ошибку.
-3. **Soft Delete:** Митапы удаляются "мягко" (проставляется `deleted_at`), но в текущей реализации репозитория `Delete` выполняет физическое удаление (`r.db.NewDelete()`). Стоит проверить, соответствует ли это бизнес-требованиям (в модели поле `DeletedAt` есть).
-
-## Полезные команды (Makefile)
-
-* `make build` — Сборка бинарника.
-* `make deps` — Обновление зависимостей (`go mod tidy`).
-* `make migration NAME=xxx` — Создание новой SQL миграции.
-* `make logs` — Просмотр логов контейнеров.
-* `make clean` — Полная очистка (остановка контейнеров и удаление вольюмов БД).
+## Makefile Commands
+* `make build` — Compile the Go binary.
+* `make deps` — Update dependencies (`go mod tidy`).
+* `make migration NAME=xxx` — Generate a new SQL migration file.
+* `make logs` — Tail logs for all Docker containers.
+* `make clean` — Stop containers and remove database volumes.
