@@ -3,11 +3,13 @@ package domain
 import "time"
 
 type Chat struct {
-	ID       int64     `bun:",pk,autoincrement"`
-	Type     string    `bun:"type,notnull"`
-	MeetupID *int64    `bun:"meetup_id"`
-	Title    string    `bun:"title"`
-	Created  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	ID              int64     `bun:",pk,autoincrement"`
+	Type            string    `bun:"type,notnull"`
+	MeetupID        *int64    `bun:"meetup_id"`
+	Title           string    `bun:"title"`
+	Created         time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	LastMessageText string    `bun:"last_message_text,scanonly"`
+	UnreadCount     int       `bun:"unread_count,scanonly"`
 }
 
 type ChatParticipant struct {

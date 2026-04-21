@@ -2,6 +2,8 @@ package repo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -227,18 +229,28 @@ func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
 		Table("meetups").
 		Set("participants_count = participants_count + 1").
 		Where("id = ?", meetupID).
-		Join("chat").
 		Exec(ctx)
 	if err != nil {
 		return err
 	}
 
-	chatParticipant := &domain.ChatParticipant{
-		ChatID: chat.ID,
-		UserID: meetup.userID,
+	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return tx.Commit()
+		}
+		return err
 	}
 
-	err = r.chatRepo.AddParticipant(ctx, tx)
+	chatParticipant := &domain.ChatParticipant{
+		ChatID: chat.ID,
+		UserID: userID,
+	}
+
+	err = r.chatRepo.AddParticipant(ctx, tx, chatParticipant)
+	if err != nil {
+		return err
+	}
 
 	return tx.Commit()
 }
