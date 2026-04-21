@@ -10,7 +10,7 @@ import (
 )
 
 type MeetupRepository interface {
-	Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error)
+	Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error)
 	GetByID(ctx context.Context, id int64, currentUserID int64) (*domain.Meetup, error)
 	List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error)
 	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
@@ -42,7 +42,11 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 		AddressText: req.Address,
 	}
 
-	created, err := s.repo.Create(ctx, meetup, req.TagIDs)
+	chat := &domain.Chat{
+		Type: "group",
+	}
+
+	created, err := s.repo.Create(ctx, meetup, chat, req.TagIDs)
 	if err != nil {
 		return nil, err
 	}

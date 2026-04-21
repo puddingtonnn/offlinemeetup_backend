@@ -3,21 +3,23 @@ package repo
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
-	"time"
 )
 
 type MeetupRepo struct {
-	db *bun.DB
+	db       *bun.DB
+	chatRepo *ChatRepo
 }
 
 func NewMeetupRepo(db *bun.DB) *MeetupRepo {
-	return &MeetupRepo{db: db}
+	return &MeetupRepo{db: db, chatRepo: NewChatRepo(db)}
 }
 
-func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error) {
+func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -26,10 +28,12 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 
 	meetup.ParticipantsCount = 1
 
-	_, err = r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at").Exec(ctx)
+	_, err = tx.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
 	}
+
+	chat.MeetupID = &meetup.ID
 
 	creatorParticipant := &domain.Participant{
 		MeetupID: meetup.ID,
@@ -54,6 +58,20 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 		if _, err := tx.NewInsert().Model(&meetupTags).Exec(ctx); err != nil {
 			return nil, err
 		}
+	}
+	err = r.chatRepo.CreateGroupChat(ctx, tx, chat)
+	if err != nil {
+		return nil, fmt.Errorf("creating group chat failed: %w", err)
+	}
+
+	chatParticipant := &domain.ChatParticipant{
+		ChatID: chat.ID,
+		UserID: meetup.CreatorID,
+	}
+
+	err = r.chatRepo.AddParticipant(ctx, tx, chatParticipant)
+	if err != nil {
+		return nil, fmt.Errorf("adding participant to chat failed: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -209,10 +227,18 @@ func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
 		Table("meetups").
 		Set("participants_count = participants_count + 1").
 		Where("id = ?", meetupID).
+		Join("chat").
 		Exec(ctx)
 	if err != nil {
 		return err
 	}
+
+	chatParticipant := &domain.ChatParticipant{
+		ChatID: chat.ID,
+		UserID: meetup.userID,
+	}
+
+	err = r.chatRepo.AddParticipant(ctx, tx)
 
 	return tx.Commit()
 }
