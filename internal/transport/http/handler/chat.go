@@ -69,7 +69,7 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		limit = 50
 	}
 
-	messages, err := h.service.GetMessages(r.Context(), chatID, cursor, limit)
+	messages, err := h.service.GetMessages(r.Context(), userID, chatID, cursor, limit)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return

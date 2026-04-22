@@ -15,7 +15,8 @@ type ChatRepository interface {
 	AddParticipant(ctx context.Context, tx bun.IDB, chatParticipant *domain.ChatParticipant) error
 	GetChatByMeetupID(ctx context.Context, tx bun.IDB, meetupID int64) (*domain.Chat, error)
 	GetUserChats(ctx context.Context, userID int64) ([]domain.Chat, error)
-	GetMessages(ctx context.Context, chatID int64, cursor int64, limit int) ([]domain.Message, error)
+	GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]domain.Message, error)
+	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, error)
 }
 
 type ChatService struct {
@@ -49,8 +50,8 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 	return dtos, nil
 }
 
-func (s *ChatService) GetMessages(ctx context.Context, chatID, cursor int64, limit int) ([]dto.MessageResponse, error) {
-	domainMessages, err := s.repo.GetMessages(ctx, chatID, cursor, limit)
+func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]dto.MessageResponse, error) {
+	domainMessages, err := s.repo.GetMessages(ctx, userID, chatID, cursor, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get messages: %w", err)
 	}
@@ -69,4 +70,29 @@ func (s *ChatService) GetMessages(ctx context.Context, chatID, cursor int64, lim
 		dtos = append(dtos, messageDTO)
 	}
 	return dtos, nil
+}
+
+func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string) (*dto.MessageResponse, error) {
+	msg := &domain.Message{
+		ChatID:      chatID,
+		SenderID:    senderID,
+		Content:     content,
+		MessageType: "text",
+	}
+
+	savedMsg, err := s.repo.SaveMessage(ctx, msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save message: %w", err)
+	}
+
+	response := &dto.MessageResponse{
+		ID:          savedMsg.ID,
+		ChatID:      savedMsg.ChatID,
+		SenderID:    savedMsg.SenderID,
+		Content:     savedMsg.Content,
+		MessageType: savedMsg.MessageType,
+		CreatedAt:   savedMsg.CreatedAt,
+	}
+
+	return response, nil
 }

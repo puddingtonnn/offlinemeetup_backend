@@ -9,6 +9,21 @@ definitions:
       value:
         type: string
     type: object
+  dto.ChatResponse:
+    properties:
+      id:
+        type: integer
+      last_message_text:
+        type: string
+      meetup_id:
+        type: integer
+      title:
+        type: string
+      type:
+        type: string
+      unread_count:
+        type: integer
+    type: object
   dto.Coordinates:
     properties:
       lat:
@@ -219,6 +234,33 @@ paths:
       summary: Вход через Telegram
       tags:
       - Auth
+  /v1/chats:
+    get:
+      description: Возвращает список всех чатов (групповых и личных), в которых состоит
+        текущий авторизованный пользователь. Отсортированы по активности (чаты с новыми
+        сообщениями — сверху). Включает текст последнего сообщения и счетчик непрочитанных.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.ChatResponse'
+            type: array
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Список чатов пользователя
+      tags:
+      - Chats
   /v1/geo/suggest:
     get:
       description: Ищет адреса и возвращает координаты

@@ -54,10 +54,11 @@ func (r *ChatRepo) GetUserChats(ctx context.Context, userID int64) ([]domain.Cha
 	return chats, nil
 }
 
-func (r *ChatRepo) GetMessages(ctx context.Context, chatID int64, cursor int64, limit int) ([]domain.Message, error) {
+func (r *ChatRepo) GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]domain.Message, error) {
 	var messages []domain.Message
 
-	query := r.db.NewSelect().Model(&messages).Where("chat_id = ?", chatID)
+	query := r.db.NewSelect().Model(&messages).
+		Where("chat_id = ? AND EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ?", chatID, chatID, userID)
 
 	if cursor > 0 {
 		query = query.Where("id < ?", cursor)
@@ -70,4 +71,30 @@ func (r *ChatRepo) GetMessages(ctx context.Context, chatID int64, cursor int64, 
 	}
 
 	return messages, nil
+}
+
+func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.NewInsert().Model(msg).Returning("id, created_at").Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert message: %w", err)
+	}
+
+	_, err = tx.NewUpdate().Table("chat_participants").Set("last_read_message_id = ?", msg.ID).
+		Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).
+		Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update sender read status: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return msg, nil
 }
