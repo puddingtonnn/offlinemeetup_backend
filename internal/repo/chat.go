@@ -53,3 +53,21 @@ func (r *ChatRepo) GetUserChats(ctx context.Context, userID int64) ([]domain.Cha
 
 	return chats, nil
 }
+
+func (r *ChatRepo) GetMessages(ctx context.Context, chatID int64, cursor int64, limit int) ([]domain.Message, error) {
+	var messages []domain.Message
+
+	query := r.db.NewSelect().Model(&messages).Where("chat_id = ?", chatID)
+
+	if cursor > 0 {
+		query = query.Where("id < ?", cursor)
+	}
+
+	err := query.Order("id DESC").Limit(limit).Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("getting messages failed: %w", err)
+	}
+
+	return messages, nil
+}

@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
@@ -42,4 +45,35 @@ func (h *ChatHandler) GetUserChats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, chats)
+}
+
+func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	chatID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.RespondError(w, fmt.Errorf("invalid chat id"), h.log)
+		return
+	}
+
+	query := r.URL.Query()
+
+	cursor, _ := strconv.ParseInt(query.Get("cursor"), 10, 64)
+	limit, _ := strconv.Atoi(query.Get("limit"))
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	messages, err := h.service.GetMessages(r.Context(), chatID, cursor, limit)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, messages)
 }

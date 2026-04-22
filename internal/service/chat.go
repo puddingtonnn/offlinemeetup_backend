@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
@@ -14,6 +15,7 @@ type ChatRepository interface {
 	AddParticipant(ctx context.Context, tx bun.IDB, chatParticipant *domain.ChatParticipant) error
 	GetChatByMeetupID(ctx context.Context, tx bun.IDB, meetupID int64) (*domain.Chat, error)
 	GetUserChats(ctx context.Context, userID int64) ([]domain.Chat, error)
+	GetMessages(ctx context.Context, chatID int64, cursor int64, limit int) ([]domain.Message, error)
 }
 
 type ChatService struct {
@@ -44,5 +46,27 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 		dtos = append(dtos, chatDTO)
 	}
 
+	return dtos, nil
+}
+
+func (s *ChatService) GetMessages(ctx context.Context, chatID, cursor int64, limit int) ([]dto.MessageResponse, error) {
+	domainMessages, err := s.repo.GetMessages(ctx, chatID, cursor, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages: %w", err)
+	}
+
+	dtos := make([]dto.MessageResponse, 0, len(domainMessages))
+
+	for _, m := range domainMessages {
+		messageDTO := dto.MessageResponse{
+			ID:          m.ID,
+			ChatID:      m.ChatID,
+			SenderID:    m.SenderID,
+			Content:     m.Content,
+			MessageType: m.MessageType,
+			CreatedAt:   m.CreatedAt,
+		}
+		dtos = append(dtos, messageDTO)
+	}
 	return dtos, nil
 }
