@@ -30,20 +30,23 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	profileRepo := repo.NewProfileRepo(db)
 	meetupRepo := repo.NewMeetupRepo(db)
 	tagRepo := repo.NewTagRepo(db)
+	chatRepo := repo.NewChatRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
 	profileService := service.NewProfileService(profileRepo, userRepo)
 	meetupService := service.NewMeetupService(meetupRepo)
 	tagService := service.NewTagService(tagRepo)
 	geoService := service.NewGeoService(cfg.DaDataToken)
+	chatService := service.NewChatService(chatRepo)
 
 	authHandler := handler.NewAuthHandler(authService, log)
 	profileHandler := handler.NewProfileHandler(profileService, log)
 	meetupHandler := handler.NewMeetupHandler(meetupService, log)
 	tagHandler := handler.NewTagHandler(tagService, log)
 	geoHandler := handler.NewGeoHandler(geoService)
+	chatHandler := handler.NewChatHandler(chatService, log)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, cfg)
 
 	return &App{
 		cfg:    cfg,
