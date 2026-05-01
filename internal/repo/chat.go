@@ -80,6 +80,17 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 	}
 	defer tx.Rollback()
 
+	exists, err := tx.NewSelect().
+		TableExpr("chat_participants").
+		Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).
+		Exists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("checking if chat_participants exists failed: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("access denied: user is not a member of this chat")
+	}
+
 	_, err = tx.NewInsert().Model(msg).Returning("id, created_at").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert message: %w", err)
