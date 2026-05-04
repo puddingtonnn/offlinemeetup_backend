@@ -73,10 +73,10 @@ func (r *ChatRepo) GetMessages(ctx context.Context, userID, chatID, cursor int64
 	return messages, nil
 }
 
-func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, error) {
+func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer tx.Rollback()
 
@@ -85,27 +85,37 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 		Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).
 		Exists(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("checking if chat_participants exists failed: %w", err)
+		return nil, nil, fmt.Errorf("checking if chat_participants exists failed: %w", err)
 	}
 	if !exists {
-		return nil, fmt.Errorf("access denied: user is not a member of this chat")
+		return nil, nil, fmt.Errorf("access denied: user is not a member of this chat")
 	}
 
 	_, err = tx.NewInsert().Model(msg).Returning("id, created_at").Exec(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert message: %w", err)
+		return nil, nil, fmt.Errorf("failed to insert message: %w", err)
 	}
 
 	_, err = tx.NewUpdate().Table("chat_participants").Set("last_read_message_id = ?", msg.ID).
 		Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).
 		Exec(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update sender read status: %w", err)
+		return nil, nil, fmt.Errorf("failed to update sender read status: %w", err)
+	}
+
+	var targetIDs []int64
+	err = tx.NewSelect().
+		TableExpr("chat_participants").
+		Column("user_id").
+		Where("chat_id = ?", msg.ChatID).
+		Scan(ctx, &targetIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get targetIDs: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+		return nil, nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	return msg, nil
+	return msg, targetIDs, nil
 }

@@ -16,7 +16,7 @@ type ChatRepository interface {
 	GetChatByMeetupID(ctx context.Context, tx bun.IDB, meetupID int64) (*domain.Chat, error)
 	GetUserChats(ctx context.Context, userID int64) ([]domain.Chat, error)
 	GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]domain.Message, error)
-	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, error)
+	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error)
 }
 
 type ChatService struct {
@@ -72,7 +72,7 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor in
 	return dtos, nil
 }
 
-func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string) (*dto.MessageResponse, error) {
+func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string) (*dto.MessageResponse, []int64, error) {
 	msg := &domain.Message{
 		ChatID:      chatID,
 		SenderID:    senderID,
@@ -80,9 +80,9 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 		MessageType: "text",
 	}
 
-	savedMsg, err := s.repo.SaveMessage(ctx, msg)
+	savedMsg, targetIDs, err := s.repo.SaveMessage(ctx, msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save message: %w", err)
+		return nil, nil, fmt.Errorf("failed to save message: %w", err)
 	}
 
 	response := &dto.MessageResponse{
@@ -94,5 +94,5 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 		CreatedAt:   savedMsg.CreatedAt,
 	}
 
-	return response, nil
+	return response, targetIDs, nil
 }

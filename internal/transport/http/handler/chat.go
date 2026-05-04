@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -14,11 +16,12 @@ import (
 
 type ChatHandler struct {
 	service *service.ChatService
+	hub     *websocket.Hub
 	log     *slog.Logger
 }
 
-func NewChatHandler(service *service.ChatService, log *slog.Logger) *ChatHandler {
-	return &ChatHandler{service: service, log: log}
+func NewChatHandler(service *service.ChatService, hub *websocket.Hub, log *slog.Logger) *ChatHandler {
+	return &ChatHandler{service: service, hub: hub, log: log}
 }
 
 // GetUserChats
@@ -76,4 +79,39 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, messages)
+}
+
+func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	chatID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.RespondError(w, fmt.Errorf("invalid chat id"), h.log)
+		return
+	}
+
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+
+	msg, targetIDs, err := h.service.SendMessage(r.Context(), chatID, userID, req.Content)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	payload, _ := json.Marshal(msg)
+
+	go h.hub.BroadcastToUsers(targetIDs, payload)
+
+	response.JSON(w, http.StatusCreated, msg)
 }
