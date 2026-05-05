@@ -85,8 +85,8 @@ func NewRouter(authHandler *handler.AuthHandler,
 			r.Use(authMiddleware.AuthMiddleware(cfg))
 
 			r.Get("/", chatHandler.GetUserChats)
-			r.Post("/{id}/message", chatHandler.SendMessage)
-			r.Get("/messages", chatHandler.GetMessages)
+			r.Post("/{id}/messages", chatHandler.SendMessage)
+			r.Get("/{id}/messages", chatHandler.GetMessages)
 		})
 
 		r.Route("/ws", func(r chi.Router) {

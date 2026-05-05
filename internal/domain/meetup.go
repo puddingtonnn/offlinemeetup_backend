@@ -45,7 +45,7 @@ type Participant struct {
 	MeetupID int64 `bun:",pk"`
 	UserID   int64 `bun:",pk"`
 
-	Role     string    `bun:",default:'member'\"`
-	Status   string    `bun:",default:'approved'\"`
+	Role     string    `bun:",default:'member'"`
+	Status   string    `bun:",default:'approved'"`
 	JoinedAt time.Time `bun:",default:current_timestamp"`
 }
