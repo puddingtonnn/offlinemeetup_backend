@@ -58,7 +58,7 @@ func (r *ChatRepo) GetMessages(ctx context.Context, userID, chatID, cursor int64
 	var messages []domain.Message
 
 	query := r.db.NewSelect().Model(&messages).
-		Where("chat_id = ? AND EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ?", chatID, chatID, userID)
+		Where("chat_id = ? AND EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ?)", chatID, chatID, userID)
 
 	if cursor > 0 {
 		query = query.Where("id < ?", cursor)
