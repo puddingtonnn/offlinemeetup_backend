@@ -9,6 +9,21 @@ definitions:
       value:
         type: string
     type: object
+  dto.ChatResponse:
+    properties:
+      id:
+        type: integer
+      last_message_text:
+        type: string
+      meetup_id:
+        type: integer
+      title:
+        type: string
+      type:
+        type: string
+      unread_count:
+        type: integer
+    type: object
   dto.Coordinates:
     properties:
       lat:
@@ -24,6 +39,8 @@ definitions:
         allOf:
         - $ref: '#/definitions/dto.Coordinates'
         description: Вложенный JSON
+      cover_file_id:
+        type: string
       description:
         type: string
       end_time:
@@ -45,7 +62,7 @@ definitions:
         type: string
       coordinates:
         $ref: '#/definitions/dto.Coordinates'
-      cover_image:
+      cover_url:
         type: string
       creator_id:
         type: integer
@@ -69,6 +86,21 @@ definitions:
         type: array
       title:
         type: string
+    type: object
+  dto.MessageResponse:
+    properties:
+      chat_id:
+        type: integer
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      message_type:
+        type: string
+      sender_id:
+        type: integer
     type: object
   dto.ProfileResponse:
     properties:
@@ -102,6 +134,8 @@ definitions:
         type: string
       coordinates:
         $ref: '#/definitions/dto.Coordinates'
+      cover_file_id:
+        type: string
       description:
         type: string
       end_time:
@@ -119,7 +153,7 @@ definitions:
     type: object
   dto.UpdateProfileRequest:
     properties:
-      avatar_url:
+      avatar_file_id:
         type: string
       bio:
         type: string
@@ -129,6 +163,12 @@ definitions:
         items:
           type: integer
         type: array
+    type: object
+  handler.SendMessageRequest:
+    properties:
+      content:
+        example: Привет, как дела?
+        type: string
     type: object
   handler.googleLoginRequest:
     properties:
@@ -219,6 +259,146 @@ paths:
       summary: Вход через Telegram
       tags:
       - Auth
+  /v1/chats:
+    get:
+      description: Возвращает список всех чатов (групповых и личных), в которых состоит
+        текущий авторизованный пользователь. Отсортированы по активности (чаты с новыми
+        сообщениями — сверху). Включает текст последнего сообщения и счетчик непрочитанных.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.ChatResponse'
+            type: array
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Список чатов пользователя
+      tags:
+      - Chats
+  /v1/chats/{id}/messages:
+    get:
+      description: Возвращает историю сообщений для конкретного чата. Поддерживает
+        cursor-based пагинацию. Пользователь должен быть участником чата.
+      parameters:
+      - description: ID чата
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID последнего полученного сообщения (для пагинации, по умолчанию
+          0)
+        in: query
+        name: cursor
+        type: integer
+      - description: Лимит сообщений (по умолчанию 50, максимум 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.MessageResponse'
+            type: array
+        "400":
+          description: Неверный ID чата или параметры
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получение сообщений чата
+      tags:
+      - Chats
+    post:
+      consumes:
+      - application/json
+      description: Сохраняет новое сообщение в базу и моментально рассылает его онлайн-участникам
+        чата через WebSockets.
+      parameters:
+      - description: ID чата
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Текст сообщения
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Неверный формат запроса
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Отправка сообщения
+      tags:
+      - Chats
+  /v1/files/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Файл
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Загрузить файл
+      tags:
+      - Files
   /v1/geo/suggest:
     get:
       description: Ищет адреса и возвращает координаты

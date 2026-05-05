@@ -15,6 +15,7 @@ type Meetup struct {
 	Description string `bun:""`
 
 	CoverFileID uuid.NullUUID `bun:"type:uuid"`
+	CoverFile   *File         `bun:"rel:belongs-to,join:cover_file_id=id"`
 
 	IsPublic  bool  `bun:",notnull"`
 	CreatorID int64 `bun:",notnull"`
@@ -32,8 +33,6 @@ type Meetup struct {
 
 	DistanceMeters float64 `bun:"distance_meters,scanonly"`
 	IsMember       bool    `bun:"is_member,scanonly"`
-
-	CoverImage string `bun:"cover_image"`
 
 	// Relations
 	Creator *User  `bun:"rel:belongs-to,join:creator_id=id"`

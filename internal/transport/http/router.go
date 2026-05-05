@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,7 +14,15 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
-func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.ProfileHandler, meetupHandler *handler.MeetupHandler, tagHandler *handler.TagHandler, geoHandler *handler.GeoHandler, cfg *config.Config) *chi.Mux {
+func NewRouter(authHandler *handler.AuthHandler,
+	profileHandler *handler.ProfileHandler,
+	meetupHandler *handler.MeetupHandler,
+	tagHandler *handler.TagHandler,
+	geoHandler *handler.GeoHandler,
+	chatHandler *handler.ChatHandler,
+	wsHandler *websocket.WSHandler,
+	fileHandler *handler.FileHandler,
+	cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
@@ -68,6 +77,22 @@ func NewRouter(authHandler *handler.AuthHandler, profileHandler *handler.Profile
 				r.Put("/", profileHandler.UpdateMyProfile)
 			})
 			r.Get("/geo/suggest", geoHandler.Suggest)
+
+			r.Post("/files/upload", fileHandler.Upload)
+		})
+
+		r.Route("/chats", func(r chi.Router) {
+			r.Use(authMiddleware.AuthMiddleware(cfg))
+
+			r.Get("/", chatHandler.GetUserChats)
+			r.Post("/{id}/messages", chatHandler.SendMessage)
+			r.Get("/{id}/messages", chatHandler.GetMessages)
+		})
+
+		r.Route("/ws", func(r chi.Router) {
+			r.Use(authMiddleware.AuthMiddleware(cfg))
+
+			r.Get("/", wsHandler.ServeWs)
 		})
 	})
 

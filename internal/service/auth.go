@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
@@ -115,9 +116,9 @@ func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, soc
 		}
 		tempNick := fmt.Sprintf("user_%s", socialID)
 		newProfile := &domain.Profile{
-			Nickname:  tempNick,
-			AvatarURL: "",
-			Bio:       "",
+			Nickname:     tempNick,
+			AvatarFileID: uuid.NullUUID{},
+			Bio:          "",
 		}
 		user, err = s.repo.CreateUserWithSocial(ctx, newUser, provider, socialID, newProfile)
 		if err != nil {

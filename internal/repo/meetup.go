@@ -2,22 +2,26 @@ package repo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"time"
+
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
-	"time"
 )
 
 type MeetupRepo struct {
-	db *bun.DB
+	db       *bun.DB
+	chatRepo *ChatRepo
 }
 
 func NewMeetupRepo(db *bun.DB) *MeetupRepo {
-	return &MeetupRepo{db: db}
+	return &MeetupRepo{db: db, chatRepo: NewChatRepo(db)}
 }
 
-func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error) {
+func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -26,10 +30,12 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 
 	meetup.ParticipantsCount = 1
 
-	_, err = r.db.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at").Exec(ctx)
+	_, err = tx.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
 	}
+
+	chat.MeetupID = &meetup.ID
 
 	creatorParticipant := &domain.Participant{
 		MeetupID: meetup.ID,
@@ -55,6 +61,20 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, tagIDs [
 			return nil, err
 		}
 	}
+	err = r.chatRepo.CreateGroupChat(ctx, tx, chat)
+	if err != nil {
+		return nil, fmt.Errorf("creating group chat failed: %w", err)
+	}
+
+	chatParticipant := &domain.ChatParticipant{
+		ChatID: chat.ID,
+		UserID: meetup.CreatorID,
+	}
+
+	err = r.chatRepo.AddParticipant(ctx, tx, chatParticipant)
+	if err != nil {
+		return nil, fmt.Errorf("adding participant to chat failed: %w", err)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("transaction commit failed: %w", err)
@@ -71,6 +91,7 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 		Column("meetup.*").
 		Relation("Creator").
 		Relation("Tags").
+		Relation("CoverFile").
 		Where("meetup.id = ?", id)
 
 	if currentUserID != 0 {
@@ -92,6 +113,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	q.Column("meetup.*")
 	q.Relation("Creator")
 	q.Relation("Tags")
+	q.Relation("CoverFile")
 
 	if filter.OnlyCreated && currentUserID != 0 {
 		q.Where("meetup.creator_id = ?", currentUserID)
@@ -210,6 +232,24 @@ func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
 		Set("participants_count = participants_count + 1").
 		Where("id = ?", meetupID).
 		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return tx.Commit()
+		}
+		return err
+	}
+
+	chatParticipant := &domain.ChatParticipant{
+		ChatID: chat.ID,
+		UserID: userID,
+	}
+
+	err = r.chatRepo.AddParticipant(ctx, tx, chatParticipant)
 	if err != nil {
 		return err
 	}

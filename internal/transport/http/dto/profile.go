@@ -11,8 +11,8 @@ type ProfileResponse struct {
 }
 
 type UpdateProfileRequest struct {
-	Nickname  string  `json:"nickname"`
-	Bio       string  `json:"bio"`
-	AvatarURL string  `json:"avatar_url"`
-	TagIDs    []int64 `json:"tags"`
+	Nickname     string  `json:"nickname"`
+	Bio          string  `json:"bio"`
+	AvatarFileID *string `json:"avatar_file_id"`
+	TagIDs       []int64 `json:"tags"`
 }

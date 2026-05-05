@@ -20,6 +20,7 @@ func (r *ProfileRepo) GetByUserID(ctx context.Context, userID int64) (*domain.Pr
 	var profile domain.Profile
 	err := r.db.NewSelect().
 		Model(&profile).
+		Relation("AvatarFile").
 		Where("user_id = ?", userID).
 		Scan(ctx)
 	if err != nil {
@@ -32,7 +33,14 @@ func (r *ProfileRepo) GetByUserID(ctx context.Context, userID int64) (*domain.Pr
 }
 
 func (r *ProfileRepo) UpdateProfile(ctx context.Context, profile *domain.Profile) (*domain.Profile, error) {
-	_, err := r.db.NewInsert().Model(profile).On("CONFLICT (user_id) DO UPDATE").Set("nickname = EXCLUDED.nickname").Set("bio = EXCLUDED.bio").Set("avatar_url = EXCLUDED.avatar_url").Returning("*").Exec(ctx)
+	_, err := r.db.NewInsert().
+		Model(profile).
+		On("CONFLICT (user_id) DO UPDATE").
+		Set("nickname = EXCLUDED.nickname").
+		Set("bio = EXCLUDED.bio").
+		Set("avatar_file_id = EXCLUDED.avatar_file_id").
+		Returning("*").
+		Exec(ctx)
 	if err != nil {
 		return nil, err
 	}

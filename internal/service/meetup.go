@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
 type MeetupRepository interface {
-	Create(ctx context.Context, meetup *domain.Meetup, tagIDs []int64) (*domain.Meetup, error)
+	Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error)
 	GetByID(ctx context.Context, id int64, currentUserID int64) (*domain.Meetup, error)
 	List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error)
 	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
@@ -20,11 +21,12 @@ type MeetupRepository interface {
 }
 
 type MeetupService struct {
-	repo MeetupRepository
+	repo        MeetupRepository
+	s3PublicURL string
 }
 
-func NewMeetupService(repo MeetupRepository) *MeetupService {
-	return &MeetupService{repo: repo}
+func NewMeetupService(repo MeetupRepository, s3PublicURL string) *MeetupService {
+	return &MeetupService{repo: repo, s3PublicURL: s3PublicURL}
 }
 
 func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.CreateMeetupRequest) (*dto.MeetupResponse, error) {
@@ -42,7 +44,18 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 		AddressText: req.Address,
 	}
 
-	created, err := s.repo.Create(ctx, meetup, req.TagIDs)
+	if req.CoverFileID != nil && *req.CoverFileID != "" {
+		id, err := uuid.Parse(*req.CoverFileID)
+		if err == nil {
+			meetup.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
+		}
+	}
+
+	chat := &domain.Chat{
+		Type: "group",
+	}
+
+	created, err := s.repo.Create(ctx, meetup, chat, req.TagIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +83,11 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		dist = &d
 	}
 
+	coverURL := ""
+	if m.CoverFile != nil {
+		coverURL = fmt.Sprintf("%s/%s", s.s3PublicURL, m.CoverFile.Key)
+	}
+
 	return &dto.MeetupResponse{
 		ID:          m.ID,
 		Title:       m.Title,
@@ -86,7 +104,7 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		ParticipantsCount: m.ParticipantsCount,
 		DistanceMeters:    dist,
 		IsMember:          m.IsMember,
-		CoverImage:        m.CoverImage,
+		CoverURL:          coverURL,
 	}
 }
 
@@ -157,6 +175,16 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		existing.Location = domain.Location{
 			Lat: req.Coordinates.Lat,
 			Lng: req.Coordinates.Lng,
+		}
+	}
+	if req.CoverFileID != nil {
+		if *req.CoverFileID == "" {
+			existing.CoverFileID = uuid.NullUUID{}
+		} else {
+			id, err := uuid.Parse(*req.CoverFileID)
+			if err == nil {
+				existing.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
+			}
 		}
 	}
 
