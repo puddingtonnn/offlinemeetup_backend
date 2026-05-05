@@ -3,10 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
 	"log/slog"
 	"net/http"
 	"strconv"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -50,6 +51,20 @@ func (h *ChatHandler) GetUserChats(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, chats)
 }
 
+// GetMessages
+// @Summary     Получение сообщений чата
+// @Description Возвращает историю сообщений для конкретного чата. Поддерживает cursor-based пагинацию. Пользователь должен быть участником чата.
+// @Tags        Chats
+// @Security    BearerAuth
+// @Produce     json
+// @Param       id      path      int     true  "ID чата"
+// @Param       cursor  query     int     false "ID последнего полученного сообщения (для пагинации, по умолчанию 0)"
+// @Param       limit   query     int     false "Лимит сообщений (по умолчанию 50, максимум 100)"
+// @Success     200     {array}   dto.MessageResponse
+// @Failure     400     {object}  response.ErrorResponse "Неверный ID чата или параметры"
+// @Failure     401     {object}  response.ErrorResponse "Не авторизован"
+// @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
+// @Router      /v1/chats/{id}/messages [get]
 func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -81,6 +96,24 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, messages)
 }
 
+type SendMessageRequest struct {
+	Content string `json:"content" example:"Привет, как дела?"`
+}
+
+// SendMessage
+// @Summary     Отправка сообщения
+// @Description Сохраняет новое сообщение в базу и моментально рассылает его онлайн-участникам чата через WebSockets.
+// @Tags        Chats
+// @Security    BearerAuth
+// @Accept      json
+// @Produce     json
+// @Param       id      path      int                 true  "ID чата"
+// @Param       request body      SendMessageRequest  true  "Текст сообщения"
+// @Success     201     {object}  dto.MessageResponse
+// @Failure     400     {object}  response.ErrorResponse "Неверный формат запроса"
+// @Failure     401     {object}  response.ErrorResponse "Не авторизован"
+// @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
+// @Router      /v1/chats/{id}/messages [post]
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -95,9 +128,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Content string `json:"content"`
-	}
+	var req SendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return

@@ -12,7 +12,7 @@ type Hub struct {
 	unregister chan *Client
 }
 
-func newHub() *Hub {
+func NewHub() *Hub {
 	return &Hub{
 		broadcast:  make(chan *BroadcastMessage),
 		register:   make(chan *Client),
@@ -28,7 +28,7 @@ func (h *Hub) BroadcastToUsers(targetIDs []int64, payload []byte) {
 	}
 }
 
-func (h *Hub) run() {
+func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:

@@ -85,6 +85,21 @@ definitions:
       title:
         type: string
     type: object
+  dto.MessageResponse:
+    properties:
+      chat_id:
+        type: integer
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      message_type:
+        type: string
+      sender_id:
+        type: integer
+    type: object
   dto.ProfileResponse:
     properties:
       avatar_url:
@@ -144,6 +159,12 @@ definitions:
         items:
           type: integer
         type: array
+    type: object
+  handler.SendMessageRequest:
+    properties:
+      content:
+        example: Привет, как дела?
+        type: string
     type: object
   handler.googleLoginRequest:
     properties:
@@ -259,6 +280,92 @@ paths:
       security:
       - BearerAuth: []
       summary: Список чатов пользователя
+      tags:
+      - Chats
+  /v1/chats/{id}/messages:
+    get:
+      description: Возвращает историю сообщений для конкретного чата. Поддерживает
+        cursor-based пагинацию. Пользователь должен быть участником чата.
+      parameters:
+      - description: ID чата
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID последнего полученного сообщения (для пагинации, по умолчанию
+          0)
+        in: query
+        name: cursor
+        type: integer
+      - description: Лимит сообщений (по умолчанию 50, максимум 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.MessageResponse'
+            type: array
+        "400":
+          description: Неверный ID чата или параметры
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получение сообщений чата
+      tags:
+      - Chats
+    post:
+      consumes:
+      - application/json
+      description: Сохраняет новое сообщение в базу и моментально рассылает его онлайн-участникам
+        чата через WebSockets.
+      parameters:
+      - description: ID чата
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Текст сообщения
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Неверный формат запроса
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Отправка сообщения
       tags:
       - Chats
   /v1/geo/suggest:

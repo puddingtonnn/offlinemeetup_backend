@@ -13,6 +13,7 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
 
 	"github.com/uptrace/bun"
 )
@@ -25,6 +26,8 @@ type App struct {
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
+	hub := websocket.NewHub()
+	go hub.Run()
 
 	userRepo := repo.NewUserRepo(db)
 	profileRepo := repo.NewProfileRepo(db)
@@ -44,9 +47,10 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	meetupHandler := handler.NewMeetupHandler(meetupService, log)
 	tagHandler := handler.NewTagHandler(tagService, log)
 	geoHandler := handler.NewGeoHandler(geoService)
-	chatHandler := handler.NewChatHandler(chatService, log)
+	chatHandler := handler.NewChatHandler(chatService, hub, log)
+	wsHandler := websocket.NewWebSocketHandler(hub, log)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, cfg)
 
 	return &App{
 		cfg:    cfg,
