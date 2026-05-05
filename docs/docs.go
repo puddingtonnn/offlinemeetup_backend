@@ -294,6 +294,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/files/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Загрузить файл",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Файл",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/geo/suggest": {
             "get": {
                 "security": [
@@ -960,6 +1003,9 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "cover_file_id": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -992,7 +1038,7 @@ const docTemplate = `{
                 "coordinates": {
                     "$ref": "#/definitions/dto.Coordinates"
                 },
-                "cover_image": {
+                "cover_url": {
                     "type": "string"
                 },
                 "creator_id": {
@@ -1102,6 +1148,9 @@ const docTemplate = `{
                 "coordinates": {
                     "$ref": "#/definitions/dto.Coordinates"
                 },
+                "cover_file_id": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -1128,7 +1177,7 @@ const docTemplate = `{
         "dto.UpdateProfileRequest": {
             "type": "object",
             "properties": {
-                "avatar_url": {
+                "avatar_file_id": {
                     "type": "string"
                 },
                 "bio": {

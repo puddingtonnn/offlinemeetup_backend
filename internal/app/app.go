@@ -8,6 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -29,18 +33,38 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	hub := websocket.NewHub()
 	go hub.Run()
 
+	// AWS SDK v2 Config
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.S3Region),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.S3AccessKey, cfg.S3SecretKey, "")),
+	)
+	if err != nil {
+		log.Error("Failed to load AWS config", slog.String("error", err.Error()))
+		panic(fmt.Errorf("failed to load AWS config: %w", err))
+	}
+
+	// S3 Client with modern endpoint configuration
+	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		if cfg.S3Endpoint != "" {
+			o.BaseEndpoint = aws.String(cfg.S3Endpoint)
+		}
+		o.UsePathStyle = true
+	})
+
 	userRepo := repo.NewUserRepo(db)
 	profileRepo := repo.NewProfileRepo(db)
 	meetupRepo := repo.NewMeetupRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	chatRepo := repo.NewChatRepo(db)
+	fileRepo := repo.NewFileRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
-	profileService := service.NewProfileService(profileRepo, userRepo)
-	meetupService := service.NewMeetupService(meetupRepo)
+	profileService := service.NewProfileService(profileRepo, userRepo, cfg.S3PublicURL)
+	meetupService := service.NewMeetupService(meetupRepo, cfg.S3PublicURL)
 	tagService := service.NewTagService(tagRepo)
 	geoService := service.NewGeoService(cfg.DaDataToken)
 	chatService := service.NewChatService(chatRepo)
+	fileService := service.NewFileService(fileRepo, s3Client, cfg)
 
 	authHandler := handler.NewAuthHandler(authService, log)
 	profileHandler := handler.NewProfileHandler(profileService, log)
@@ -49,8 +73,9 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	geoHandler := handler.NewGeoHandler(geoService)
 	chatHandler := handler.NewChatHandler(chatService, hub, log)
 	wsHandler := websocket.NewWebSocketHandler(hub, log)
+	fileHandler := handler.NewFileHandler(fileService, log)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, cfg)
 
 	return &App{
 		cfg:    cfg,

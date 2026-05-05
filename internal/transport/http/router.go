@@ -21,6 +21,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 	geoHandler *handler.GeoHandler,
 	chatHandler *handler.ChatHandler,
 	wsHandler *websocket.WSHandler,
+	fileHandler *handler.FileHandler,
 	cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
@@ -76,6 +77,8 @@ func NewRouter(authHandler *handler.AuthHandler,
 				r.Put("/", profileHandler.UpdateMyProfile)
 			})
 			r.Get("/geo/suggest", geoHandler.Suggest)
+
+			r.Post("/files/upload", fileHandler.Upload)
 		})
 
 		r.Route("/chats", func(r chi.Router) {

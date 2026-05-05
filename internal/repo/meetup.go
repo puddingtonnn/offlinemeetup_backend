@@ -91,6 +91,7 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 		Column("meetup.*").
 		Relation("Creator").
 		Relation("Tags").
+		Relation("CoverFile").
 		Where("meetup.id = ?", id)
 
 	if currentUserID != 0 {
@@ -112,6 +113,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	q.Column("meetup.*")
 	q.Relation("Creator")
 	q.Relation("Tags")
+	q.Relation("CoverFile")
 
 	if filter.OnlyCreated && currentUserID != 0 {
 		q.Where("meetup.creator_id = ?", currentUserID)

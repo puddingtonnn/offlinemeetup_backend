@@ -16,6 +16,7 @@ type CreateMeetupRequest struct {
 	Coordinates Coordinates `json:"coordinates"` // Вложенный JSON
 	Address     string      `json:"address"`
 	TagIDs      []int64     `json:"tags"`
+	CoverFileID *string     `json:"cover_file_id"`
 }
 
 func (r *CreateMeetupRequest) Validate() map[string]string {
@@ -49,7 +50,7 @@ type MeetupResponse struct {
 	ParticipantsCount int           `json:"participants_count"`
 	DistanceMeters    *int          `json:"distance_meters,omitempty"`
 	IsMember          bool          `json:"is_member"`
-	CoverImage        string        `json:"cover_image"`
+	CoverURL          string        `json:"cover_url"`
 }
 
 type MeetupFilter struct {
@@ -74,4 +75,5 @@ type UpdateMeetupRequest struct {
 	EndTime     *time.Time   `json:"end_time"`
 	Coordinates *Coordinates `json:"coordinates"`
 	Address     *string      `json:"address"`
+	CoverFileID *string      `json:"cover_file_id"`
 }

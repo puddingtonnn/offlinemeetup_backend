@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+
+	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
@@ -20,10 +22,11 @@ type UserTagUpdater interface {
 type ProfileService struct {
 	profileRepo ProfileRepository
 	userRepo    UserTagUpdater
+	s3PublicURL string
 }
 
-func NewProfileService(profileRepo ProfileRepository, userRepo UserTagUpdater) *ProfileService {
-	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo}
+func NewProfileService(profileRepo ProfileRepository, userRepo UserTagUpdater, s3PublicURL string) *ProfileService {
+	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo, s3PublicURL: s3PublicURL}
 }
 
 func mapTagsToDTO(tags []domain.Tag) []dto.TagResponse {
@@ -54,30 +57,38 @@ func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.Pro
 		return nil, fmt.Errorf("failed to fetch tags: %w", err)
 	}
 
+	avatarURL := ""
+	if profile.AvatarFile != nil {
+		avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, profile.AvatarFile.Key)
+	}
+
 	return &dto.ProfileResponse{
 		ID:          profile.ID,
 		UserID:      profile.UserID,
 		Nickname:    profile.Nickname,
 		Bio:         profile.Bio,
-		AvatarURL:   profile.AvatarURL,
+		AvatarURL:   avatarURL,
 		IsOrganizer: profile.IsOrganizer,
 		Tags:        mapTagsToDTO(tags),
 	}, nil
 }
 
-type UpdateProfileInput struct {
-	Nickname  string   `json:"nickname"`
-	Bio       string   `json:"bio"`
-	AvatarURL string   `json:"avatar_url"`
-	Tags      []string `json:"tags"`
-}
-
 func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dto.UpdateProfileRequest) (*dto.ProfileResponse, error) {
 	profile := &domain.Profile{
-		UserID:    userID,
-		Nickname:  req.Nickname,
-		Bio:       req.Bio,
-		AvatarURL: req.AvatarURL,
+		UserID:   userID,
+		Nickname: req.Nickname,
+		Bio:      req.Bio,
+	}
+
+	if req.AvatarFileID != nil {
+		if *req.AvatarFileID == "" {
+			profile.AvatarFileID = uuid.NullUUID{}
+		} else {
+			id, err := uuid.Parse(*req.AvatarFileID)
+			if err == nil {
+				profile.AvatarFileID = uuid.NullUUID{UUID: id, Valid: true}
+			}
+		}
 	}
 
 	_, err := s.profileRepo.UpdateProfile(ctx, profile)
