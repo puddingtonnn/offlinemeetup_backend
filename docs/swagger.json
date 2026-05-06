@@ -931,6 +931,40 @@
                     }
                 }
             }
+        },
+        "/v1/ws": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Открывает постоянное WebSocket соединение для получения событий чата (новые сообщения, статусы). Требуется Bearer токен в заголовке Authorization.",
+                "tags": [
+                    "WebSockets"
+                ],
+                "summary": "Установка WebSocket соединения",
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols (Успешное подключение)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Не авторизован",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Ошибка при апгрейде соединения",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {

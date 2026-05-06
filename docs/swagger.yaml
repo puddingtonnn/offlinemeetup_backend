@@ -786,6 +786,28 @@ paths:
       summary: Получить список тегов
       tags:
       - Tags
+  /v1/ws:
+    get:
+      description: Открывает постоянное WebSocket соединение для получения событий
+        чата (новые сообщения, статусы). Требуется Bearer токен в заголовке Authorization.
+      responses:
+        "101":
+          description: Switching Protocols (Успешное подключение)
+          schema:
+            type: string
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Ошибка при апгрейде соединения
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Установка WebSocket соединения
+      tags:
+      - WebSockets
 securityDefinitions:
   BearerAuth:
     description: 'Введите токен в формате: Bearer <your-token>'
