@@ -31,7 +31,9 @@ type App struct {
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	hub := websocket.NewHub()
-	go hub.Run()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go hub.Run(ctx)
 
 	// AWS SDK v2 Config
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
@@ -90,12 +92,22 @@ func (a *App) Run(ctx context.Context) error {
 		Addr:    ":" + a.cfg.AppPort,
 		Handler: a.router,
 	}
+
+	serverErr := make(chan error, 1)
 	go func() {
 		a.log.Info("Starting server", slog.String("port", a.cfg.AppPort))
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.log.Error("Server execution failed", slog.String("error", err.Error()))
+			serverErr <- err
 		}
 	}()
+
+	select {
+	case err := <-serverErr:
+		return fmt.Errorf("server failed to start: %w", err)
+	case <-ctx.Done():
+		a.log.Info("Shutting down server")
+	}
+
 	<-ctx.Done()
 	a.log.Info("Shutting down server", slog.String("port", a.cfg.AppPort))
 
