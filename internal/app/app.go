@@ -18,7 +18,7 @@ import (
 	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
-
+	"github.com/redis/go-redis/v9"
 	"github.com/uptrace/bun"
 )
 
@@ -27,13 +27,17 @@ type App struct {
 	log    *slog.Logger
 	router http.Handler
 	DB     *bun.DB
+	hub    *websocket.Hub
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	hub := websocket.NewHub()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go hub.Run(ctx)
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "meetuper_redis:6379",
+		Password: "",
+		DB:       0,
+	})
 
 	// AWS SDK v2 Config
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
@@ -65,7 +69,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	meetupService := service.NewMeetupService(meetupRepo, cfg.S3PublicURL)
 	tagService := service.NewTagService(tagRepo)
 	geoService := service.NewGeoService(cfg.DaDataToken)
-	chatService := service.NewChatService(chatRepo)
+	chatService := service.NewChatService(chatRepo, rdb, log)
 	fileService := service.NewFileService(fileRepo, s3Client, cfg)
 
 	authHandler := handler.NewAuthHandler(authService, log)
@@ -84,10 +88,13 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 		log:    log,
 		router: router,
 		DB:     db,
+		hub:    hub,
 	}
 }
 
 func (a *App) Run(ctx context.Context) error {
+	go a.hub.Run(ctx)
+
 	server := &http.Server{
 		Addr:    ":" + a.cfg.AppPort,
 		Handler: a.router,

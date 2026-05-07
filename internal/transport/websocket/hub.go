@@ -33,7 +33,7 @@ func (h *Hub) BroadcastToUsers(targetIDs []int64, payload []byte) {
 func (h *Hub) Run(ctx context.Context) {
 	for {
 		select {
-		case <-ctx.Done:
+		case <-ctx.Done():
 			for _, client := range h.clients {
 				close(client.send)
 			}
