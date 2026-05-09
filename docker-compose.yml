@@ -65,19 +65,25 @@ services:
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
     volumes:
       - ./.data/minio:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     command: server /data --console-address ":9001"
     networks:
       - default
       - web
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=web"
+
       - "traefik.http.routers.minio.rule=Host(`s3.meetuper.site`)"
       - "traefik.http.routers.minio.entrypoints=websecure"
       - "traefik.http.routers.minio.tls.certresolver=myresolver"
-      - "traefik.http.services.minio.loadbalancer.server.port=9000"
+      - "traefik.http.routers.minio.service=minio-api"
+      - "traefik.http.services.minio-api.loadbalancer.server.port=9000"
+
+      - "traefik.http.routers.minio-console.rule=Host(`console.s3.meetuper.site`)"
+      - "traefik.http.routers.minio-console.entrypoints=websecure"
+      - "traefik.http.routers.minio-console.tls.certresolver=myresolver"
+      - "traefik.http.routers.minio-console.service=minio-console"
+      - "traefik.http.services.minio-console.loadbalancer.server.port=9001"
 
   minio_init:
     image: minio/mc

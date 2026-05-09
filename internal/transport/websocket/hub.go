@@ -1,5 +1,7 @@
 package websocket
 
+import "context"
+
 type BroadcastMessage struct {
 	TargetUserIDs []int64
 	Payload       []byte
@@ -28,9 +30,14 @@ func (h *Hub) BroadcastToUsers(targetIDs []int64, payload []byte) {
 	}
 }
 
-func (h *Hub) Run() {
+func (h *Hub) Run(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			for _, client := range h.clients {
+				close(client.send)
+			}
+			return
 		case client := <-h.register:
 			h.clients[client.userID] = client
 		case client := <-h.unregister:

@@ -61,10 +61,10 @@ func main() {
 	}
 	defer database.Close()
 
-	application := app.New(logger, cfg, database)
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	application := app.New(logger, cfg, database)
 
 	if err := application.Run(ctx); err != nil {
 		logger.Error("Failed to run", slog.String("err", err.Error()))
