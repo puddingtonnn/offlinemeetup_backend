@@ -66,7 +66,7 @@ func (s *GeoService) sendRequest(url string, bodyData interface{}) ([]dto.Addres
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("dadata returned status: %s", resp.StatusCode)
+		return nil, fmt.Errorf("dadata returned status: %d", resp.StatusCode)
 	}
 
 	var daDataResp dto.DaDataResponse

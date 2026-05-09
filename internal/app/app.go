@@ -66,7 +66,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
 	authService := service.NewAuthService(userRepo, cfg)
 	profileService := service.NewProfileService(profileRepo, userRepo, cfg.S3PublicURL)
-	meetupService := service.NewMeetupService(meetupRepo, cfg.S3PublicURL)
+	meetupService := service.NewMeetupService(meetupRepo, rdb, cfg.S3PublicURL)
 	tagService := service.NewTagService(tagRepo)
 	geoService := service.NewGeoService(cfg.DaDataToken)
 	chatService := service.NewChatService(chatRepo, rdb, log)

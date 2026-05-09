@@ -43,7 +43,7 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 			return chats, nil
 		}
 	} else if err != redis.Nil {
-		s.log.Error("Redis GET error", err)
+		s.log.Error("Redis GET error", slog.Any("error", err))
 	}
 
 	domainChats, err := s.repo.GetUserChats(ctx, userID)

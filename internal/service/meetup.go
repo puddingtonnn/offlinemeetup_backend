@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/redis/go-redis/v9"
 )
 
 type MeetupRepository interface {
@@ -22,11 +23,12 @@ type MeetupRepository interface {
 
 type MeetupService struct {
 	repo        MeetupRepository
+	rdb         *redis.Client
 	s3PublicURL string
 }
 
-func NewMeetupService(repo MeetupRepository, s3PublicURL string) *MeetupService {
-	return &MeetupService{repo: repo, s3PublicURL: s3PublicURL}
+func NewMeetupService(repo MeetupRepository, rdb *redis.Client, s3PublicURL string) *MeetupService {
+	return &MeetupService{repo: repo, rdb: rdb, s3PublicURL: s3PublicURL}
 }
 
 func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.CreateMeetupRequest) (*dto.MeetupResponse, error) {
@@ -59,6 +61,8 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 	if err != nil {
 		return nil, err
 	}
+
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
 
 	return s.mapToResponse(created), nil
 }
@@ -223,9 +227,19 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 		return ErrMeetupFinished
 	}
 
-	return s.repo.Join(ctx, meetupID, userID)
+	if err := s.repo.Join(ctx, meetupID, userID); err != nil {
+		return err
+	}
+
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	return nil
 }
 
 func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64) error {
-	return s.repo.Leave(ctx, meetupID, userID)
+	if err := s.repo.Leave(ctx, meetupID, userID); err != nil {
+		return err
+	}
+
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	return nil
 }
