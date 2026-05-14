@@ -10,6 +10,8 @@ type Chat struct {
 	CreatedAt       time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 	LastMessageText string    `bun:"last_message_text,scanonly"`
 	UnreadCount     int       `bun:"unread_count,scanonly"`
+
+	Meetup *Meetup `bun:"rel:belongs-to,join:meetup_id=id"`
 }
 
 type ChatParticipant struct {
@@ -17,6 +19,9 @@ type ChatParticipant struct {
 	UserID            int64     `bun:"user_id,pk"`
 	JoinedAt          time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 	LastReadMessageID int64     `bun:"last_read_message_id,default:0"`
+
+	Chat *Chat `bun:"rel:belongs-to,join:chat_id=id"`
+	User *User `bun:"rel:belongs-to,join:user_id=id"`
 }
 
 type Message struct {

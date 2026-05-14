@@ -68,10 +68,17 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 }
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
+	if m == nil {
+		return nil
+	}
+
 	var tagsDTO []dto.TagResponse
 	if len(m.Tags) > 0 {
 		tagsDTO = make([]dto.TagResponse, len(m.Tags))
 		for i, t := range m.Tags {
+			if t == nil {
+				continue
+			}
 			tagsDTO[i] = dto.TagResponse{
 				ID:   t.ID,
 				Name: t.Name,
@@ -106,12 +113,13 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 			Bio:         p.Bio,
 			AvatarURL:   avatarURL,
 			IsOrganizer: p.IsOrganizer,
+			Tags:        []dto.TagResponse{},
 		}
 	}
 
 	participantsDTO := make([]*dto.ProfileResponse, 0, len(m.Participants))
 	for _, part := range m.Participants {
-		if part.Profile != nil {
+		if part != nil && part.Profile != nil {
 			p := part.Profile
 			avatarURL := ""
 			if p.AvatarFile != nil {
@@ -124,6 +132,7 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 				Bio:         p.Bio,
 				AvatarURL:   avatarURL,
 				IsOrganizer: p.IsOrganizer,
+				Tags:        []dto.TagResponse{},
 			})
 		}
 	}
@@ -230,7 +239,12 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		}
 	}
 
-	if err := s.repo.Update(ctx, existing, *req.TagIDs); err != nil {
+	var tagIDs []int64
+	if req.TagIDs != nil {
+		tagIDs = *req.TagIDs
+	}
+
+	if err := s.repo.Update(ctx, existing, tagIDs); err != nil {
 		return nil, err
 	}
 	return s.mapToResponse(existing), nil

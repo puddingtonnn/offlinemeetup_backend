@@ -55,15 +55,10 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 	dtos := make([]dto.ChatResponse, 0, len(domainChats))
 
 	for _, c := range domainChats {
-		chatDTO := dto.ChatResponse{
-			ID:              c.ID,
-			Type:            c.Type,
-			MeetupID:        c.MeetupID,
-			Title:           c.Title,
-			LastMessageText: c.LastMessageText,
-			UnreadCount:     c.UnreadCount,
+		resp := s.mapChatToResponse(&c)
+		if resp != nil {
+			dtos = append(dtos, *resp)
 		}
-		dtos = append(dtos, chatDTO)
 	}
 
 	if dtosToCache, err := json.Marshal(dtos); err == nil {
@@ -82,7 +77,10 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor in
 	dtos := make([]dto.MessageResponse, 0, len(domainMessages))
 
 	for _, m := range domainMessages {
-		dtos = append(dtos, *s.mapMessageToResponse(&m))
+		resp := s.mapMessageToResponse(&m)
+		if resp != nil {
+			dtos = append(dtos, *resp)
+		}
 	}
 	return dtos, nil
 }
@@ -108,6 +106,10 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 }
 
 func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageResponse {
+	if m == nil {
+		return nil
+	}
+
 	var senderDTO *dto.ProfileResponse
 	if m.Sender != nil && m.Sender.Profile != nil {
 		p := m.Sender.Profile
@@ -122,6 +124,7 @@ func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageRespon
 			Bio:         p.Bio,
 			AvatarURL:   avatarURL,
 			IsOrganizer: p.IsOrganizer,
+			Tags:        []dto.TagResponse{},
 		}
 	}
 
@@ -133,5 +136,112 @@ func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageRespon
 		Content:     m.Content,
 		MessageType: m.MessageType,
 		CreatedAt:   m.CreatedAt,
+	}
+}
+
+func (s *ChatService) mapChatToResponse(c *domain.Chat) *dto.ChatResponse {
+	if c == nil {
+		return nil
+	}
+
+	var meetupDTO *dto.MeetupResponse
+	if c.Meetup != nil {
+		meetupDTO = s.mapMeetupToResponse(c.Meetup)
+	}
+
+	return &dto.ChatResponse{
+		ID:              c.ID,
+		Type:            c.Type,
+		MeetupID:        c.MeetupID,
+		Meetup:          meetupDTO,
+		Title:           c.Title,
+		LastMessageText: c.LastMessageText,
+		UnreadCount:     c.UnreadCount,
+	}
+}
+
+func (s *ChatService) mapMeetupToResponse(m *domain.Meetup) *dto.MeetupResponse {
+	if m == nil {
+		return nil
+	}
+
+	var tagsDTO []dto.TagResponse
+	if len(m.Tags) > 0 {
+		tagsDTO = make([]dto.TagResponse, len(m.Tags))
+		for i, t := range m.Tags {
+			if t == nil {
+				continue
+			}
+			tagsDTO[i] = dto.TagResponse{
+				ID:   t.ID,
+				Name: t.Name,
+			}
+		}
+	} else {
+		tagsDTO = []dto.TagResponse{}
+	}
+
+	coverURL := ""
+	if m.CoverFile != nil {
+		coverURL = fmt.Sprintf("%s/%s", s.s3PublicURL, m.CoverFile.Key)
+	}
+
+	var creatorDTO *dto.ProfileResponse
+	if m.Creator != nil && m.Creator.Profile != nil {
+		p := m.Creator.Profile
+		avatarURL := ""
+		if p.AvatarFile != nil {
+			avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+		}
+		creatorDTO = &dto.ProfileResponse{
+			ID:          p.ID,
+			UserID:      p.UserID,
+			Nickname:    p.Nickname,
+			Bio:         p.Bio,
+			AvatarURL:   avatarURL,
+			IsOrganizer: p.IsOrganizer,
+			Tags:        []dto.TagResponse{},
+		}
+	}
+
+	participantsDTO := make([]*dto.ProfileResponse, 0, len(m.Participants))
+	for _, part := range m.Participants {
+		if part != nil && part.Profile != nil {
+			p := part.Profile
+			avatarURL := ""
+			if p.AvatarFile != nil {
+				avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+			}
+			participantsDTO = append(participantsDTO, &dto.ProfileResponse{
+				ID:          p.ID,
+				UserID:      p.UserID,
+				Nickname:    p.Nickname,
+				Bio:         p.Bio,
+				AvatarURL:   avatarURL,
+				IsOrganizer: p.IsOrganizer,
+				Tags:        []dto.TagResponse{},
+			})
+		}
+	}
+
+	return &dto.MeetupResponse{
+		ID:          m.ID,
+		Title:       m.Title,
+		Description: m.Description,
+		StartTime:   m.StartTime,
+		EndTime:     m.EndTime,
+		Coordinates: dto.Coordinates{
+			Lat: m.Location.Lat,
+			Lng: m.Location.Lng,
+		},
+		Address:           m.AddressText,
+		CreatorID:         m.CreatorID,
+		Creator:           creatorDTO,
+		Tags:              tagsDTO,
+		ParticipantsCount: m.ParticipantsCount,
+		Participants:      participantsDTO,
+		DistanceMeters:    nil, // Не вычисляем здесь
+		IsMember:          m.IsMember,
+		CoverURL:          coverURL,
 	}
 }

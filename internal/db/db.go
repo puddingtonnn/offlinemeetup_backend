@@ -19,6 +19,8 @@ func New(dsn string) (*bun.DB, error) {
 	db.RegisterModel(
 		(*domain.UserTag)(nil),
 		(*domain.MeetupTag)(nil),
+		(*domain.Participant)(nil),
+		(*domain.ChatParticipant)(nil),
 	)
 
 	if err := db.Ping(); err != nil {

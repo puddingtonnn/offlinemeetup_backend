@@ -49,4 +49,7 @@ type Participant struct {
 	Role     string    `bun:",default:'member'"`
 	Status   string    `bun:",default:'approved'"`
 	JoinedAt time.Time `bun:",default:current_timestamp"`
+
+	Meetup *Meetup `bun:"rel:belongs-to,join:meetup_id=id"`
+	User   *User   `bun:"rel:belongs-to,join:user_id=id"`
 }
