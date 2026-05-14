@@ -149,12 +149,17 @@ func (s *ChatService) mapChatToResponse(c *domain.Chat) *dto.ChatResponse {
 		meetupDTO = s.mapMeetupToResponse(c.Meetup)
 	}
 
+	title := c.Title
+	if title == "" && meetupDTO != nil {
+		title = meetupDTO.Title
+	}
+
 	return &dto.ChatResponse{
 		ID:              c.ID,
 		Type:            c.Type,
 		MeetupID:        c.MeetupID,
 		Meetup:          meetupDTO,
-		Title:           c.Title,
+		Title:           title,
 		LastMessageText: c.LastMessageText,
 		UnreadCount:     c.UnreadCount,
 	}

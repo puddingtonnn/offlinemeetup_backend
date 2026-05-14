@@ -100,7 +100,7 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 		Where("meetup.id = ?", id)
 
 	if currentUserID != 0 {
-		q.ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = ?TableAlias.id AND p.user_id = ?) AS is_member", currentUserID)
+		q.ColumnExpr("EXISTS (SELECT 1 FROM participants AS sub_p WHERE sub_p.meetup_id = ?TableAlias.id AND sub_p.user_id = ?) AS is_member", currentUserID)
 	}
 
 	err := q.Scan(ctx)
@@ -153,7 +153,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 				filter.Lng, filter.Lat, filter.Radius)
 		}
 		// Вычисление расстояния
-		q.ColumnExpr("meetup.*, ST_Distance(location, ST_MakePoint(?, ?)::geography) AS distance_meters",
+		q.ColumnExpr("ST_Distance(?TableAlias.location, ST_MakePoint(?, ?)::geography) AS distance_meters",
 			filter.Lng, filter.Lat)
 
 		// Сортировка
@@ -163,7 +163,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	}
 
 	if currentUserID != 0 {
-		q.ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = meetup.id AND p.user_id = ?) AS is_member", currentUserID)
+		q.ColumnExpr("EXISTS (SELECT 1 FROM participants AS sub_p WHERE sub_p.meetup_id = ?TableAlias.id AND sub_p.user_id = ?) AS is_member", currentUserID)
 	}
 
 	if len(filter.Tags) > 0 {
