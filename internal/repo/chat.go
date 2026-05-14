@@ -40,11 +40,17 @@ func (r *ChatRepo) GetUserChats(ctx context.Context, userID int64) ([]domain.Cha
 	var chats []domain.Chat
 	err := r.db.NewSelect().Model(&chats).
 		ColumnExpr("chat.*").
-		ColumnExpr("(SELECT content FROM messages m WHERE m.chat_id = chat.id ORDER BY m.created_at DESC LIMIT 1) AS last_message_text").
-		ColumnExpr("(SELECT COUNT(id) FROM messages m WHERE m.chat_id = chat.id AND m.id > cp.last_read_message_id ) AS unread_count").
+		ColumnExpr("(SELECT content FROM messages m2 WHERE m2.chat_id = chat.id ORDER BY m2.created_at DESC LIMIT 1) AS last_message_text").
+		ColumnExpr("(SELECT COUNT(id) FROM messages m2 WHERE m2.chat_id = chat.id AND m2.id > cp.last_read_message_id ) AS unread_count").
+		Relation("Meetup").
+		Relation("Meetup.Creator").
+		Relation("Meetup.Creator.Profile").
+		Relation("Meetup.Creator.Profile.AvatarFile").
+		Relation("Meetup.Tags").
+		Relation("Meetup.CoverFile").
 		Join("JOIN chat_participants cp ON cp.chat_id = chat.id").
 		Where("cp.user_id = ?", userID).
-		OrderExpr("(SELECT MAX(id) FROM messages WHERE chat_id = chat.id) DESC NULLS LAST").
+		OrderExpr("GREATEST(COALESCE((SELECT MAX(created_at) FROM messages WHERE chat_id = chat.id), '1970-01-01'::timestamp), chat.created_at) DESC").
 		Scan(ctx)
 
 	if err != nil {
@@ -58,6 +64,9 @@ func (r *ChatRepo) GetMessages(ctx context.Context, userID, chatID, cursor int64
 	var messages []domain.Message
 
 	query := r.db.NewSelect().Model(&messages).
+		Relation("Sender").
+		Relation("Sender.Profile").
+		Relation("Sender.Profile.AvatarFile").
 		Where("chat_id = ? AND EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ?)", chatID, chatID, userID)
 
 	if cursor > 0 {
@@ -115,6 +124,16 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 
 	if err := tx.Commit(); err != nil {
 		return nil, nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	err = r.db.NewSelect().Model(msg).
+		Relation("Sender").
+		Relation("Sender.Profile").
+		Relation("Sender.Profile.AvatarFile").
+		WherePK().
+		Scan(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load sender after save: %w", err)
 	}
 
 	return msg, targetIDs, nil

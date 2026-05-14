@@ -39,6 +39,10 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 		DB:       0,
 	})
 
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		log.Error("failed to connect to redis", err)
+	}
+
 	// AWS SDK v2 Config
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion(cfg.S3Region),
@@ -66,10 +70,10 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
 	authService := service.NewAuthService(userRepo, cfg)
 	profileService := service.NewProfileService(profileRepo, userRepo, cfg.S3PublicURL)
-	meetupService := service.NewMeetupService(meetupRepo, cfg.S3PublicURL)
+	meetupService := service.NewMeetupService(meetupRepo, rdb, cfg.S3PublicURL)
 	tagService := service.NewTagService(tagRepo)
 	geoService := service.NewGeoService(cfg.DaDataToken)
-	chatService := service.NewChatService(chatRepo, rdb, log)
+	chatService := service.NewChatService(chatRepo, rdb, log, cfg.S3PublicURL)
 	fileService := service.NewFileService(fileRepo, s3Client, cfg)
 
 	authHandler := handler.NewAuthHandler(authService, log)

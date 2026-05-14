@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/redis/go-redis/v9"
 )
 
 type MeetupRepository interface {
@@ -22,11 +23,12 @@ type MeetupRepository interface {
 
 type MeetupService struct {
 	repo        MeetupRepository
+	rdb         *redis.Client
 	s3PublicURL string
 }
 
-func NewMeetupService(repo MeetupRepository, s3PublicURL string) *MeetupService {
-	return &MeetupService{repo: repo, s3PublicURL: s3PublicURL}
+func NewMeetupService(repo MeetupRepository, rdb *redis.Client, s3PublicURL string) *MeetupService {
+	return &MeetupService{repo: repo, rdb: rdb, s3PublicURL: s3PublicURL}
 }
 
 func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.CreateMeetupRequest) (*dto.MeetupResponse, error) {
@@ -60,14 +62,23 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 		return nil, err
 	}
 
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+
 	return s.mapToResponse(created), nil
 }
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
+	if m == nil {
+		return nil
+	}
+
 	var tagsDTO []dto.TagResponse
 	if len(m.Tags) > 0 {
 		tagsDTO = make([]dto.TagResponse, len(m.Tags))
 		for i, t := range m.Tags {
+			if t == nil {
+				continue
+			}
 			tagsDTO[i] = dto.TagResponse{
 				ID:   t.ID,
 				Name: t.Name,
@@ -88,6 +99,44 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		coverURL = fmt.Sprintf("%s/%s", s.s3PublicURL, m.CoverFile.Key)
 	}
 
+	var creatorDTO *dto.ProfileResponse
+	if m.Creator != nil && m.Creator.Profile != nil {
+		p := m.Creator.Profile
+		avatarURL := ""
+		if p.AvatarFile != nil {
+			avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+		}
+		creatorDTO = &dto.ProfileResponse{
+			ID:          p.ID,
+			UserID:      p.UserID,
+			Nickname:    p.Nickname,
+			Bio:         p.Bio,
+			AvatarURL:   avatarURL,
+			IsOrganizer: p.IsOrganizer,
+			Tags:        []dto.TagResponse{},
+		}
+	}
+
+	participantsDTO := make([]*dto.ProfileResponse, 0, len(m.Participants))
+	for _, part := range m.Participants {
+		if part != nil && part.Profile != nil {
+			p := part.Profile
+			avatarURL := ""
+			if p.AvatarFile != nil {
+				avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+			}
+			participantsDTO = append(participantsDTO, &dto.ProfileResponse{
+				ID:          p.ID,
+				UserID:      p.UserID,
+				Nickname:    p.Nickname,
+				Bio:         p.Bio,
+				AvatarURL:   avatarURL,
+				IsOrganizer: p.IsOrganizer,
+				Tags:        []dto.TagResponse{},
+			})
+		}
+	}
+
 	return &dto.MeetupResponse{
 		ID:          m.ID,
 		Title:       m.Title,
@@ -100,8 +149,10 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		},
 		Address:           m.AddressText,
 		CreatorID:         m.CreatorID,
+		Creator:           creatorDTO,
 		Tags:              tagsDTO,
 		ParticipantsCount: m.ParticipantsCount,
+		Participants:      participantsDTO,
 		DistanceMeters:    dist,
 		IsMember:          m.IsMember,
 		CoverURL:          coverURL,
@@ -188,7 +239,12 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		}
 	}
 
-	if err := s.repo.Update(ctx, existing, *req.TagIDs); err != nil {
+	var tagIDs []int64
+	if req.TagIDs != nil {
+		tagIDs = *req.TagIDs
+	}
+
+	if err := s.repo.Update(ctx, existing, tagIDs); err != nil {
 		return nil, err
 	}
 	return s.mapToResponse(existing), nil
@@ -223,9 +279,19 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 		return ErrMeetupFinished
 	}
 
-	return s.repo.Join(ctx, meetupID, userID)
+	if err := s.repo.Join(ctx, meetupID, userID); err != nil {
+		return err
+	}
+
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	return nil
 }
 
 func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64) error {
-	return s.repo.Leave(ctx, meetupID, userID)
+	if err := s.repo.Leave(ctx, meetupID, userID); err != nil {
+		return err
+	}
+
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	return nil
 }

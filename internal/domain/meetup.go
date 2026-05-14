@@ -35,8 +35,9 @@ type Meetup struct {
 	IsMember       bool    `bun:"is_member,scanonly"`
 
 	// Relations
-	Creator *User  `bun:"rel:belongs-to,join:creator_id=id"`
-	Tags    []*Tag `bun:"m2m:meetup_tags,join:Meetup=Tag"`
+	Creator      *User   `bun:"rel:belongs-to,join:creator_id=id"`
+	Tags         []*Tag  `bun:"m2m:meetup_tags,join:Meetup=Tag"`
+	Participants []*User `bun:"m2m:participants,join:Meetup=User"`
 }
 
 type Participant struct {
@@ -48,4 +49,7 @@ type Participant struct {
 	Role     string    `bun:",default:'member'"`
 	Status   string    `bun:",default:'approved'"`
 	JoinedAt time.Time `bun:",default:current_timestamp"`
+
+	Meetup *Meetup `bun:"rel:belongs-to,join:meetup_id=id"`
+	User   *User   `bun:"rel:belongs-to,join:user_id=id"`
 }

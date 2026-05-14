@@ -24,13 +24,14 @@ type ChatRepository interface {
 }
 
 type ChatService struct {
-	repo ChatRepository
-	rdb  *redis.Client
-	log  *slog.Logger
+	repo        ChatRepository
+	rdb         *redis.Client
+	log         *slog.Logger
+	s3PublicURL string
 }
 
-func NewChatService(repo ChatRepository, rdb *redis.Client, log *slog.Logger) *ChatService {
-	return &ChatService{repo: repo, rdb: rdb, log: log}
+func NewChatService(repo ChatRepository, rdb *redis.Client, log *slog.Logger, s3PublicURL string) *ChatService {
+	return &ChatService{repo: repo, rdb: rdb, log: log, s3PublicURL: s3PublicURL}
 }
 
 func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.ChatResponse, error) {
@@ -43,7 +44,7 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 			return chats, nil
 		}
 	} else if err != redis.Nil {
-		s.log.Error("Redis GET error", err)
+		s.log.Error("Redis GET error", slog.Any("error", err))
 	}
 
 	domainChats, err := s.repo.GetUserChats(ctx, userID)
@@ -54,15 +55,10 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 	dtos := make([]dto.ChatResponse, 0, len(domainChats))
 
 	for _, c := range domainChats {
-		chatDTO := dto.ChatResponse{
-			ID:              c.ID,
-			Type:            c.Type,
-			MeetupID:        c.MeetupID,
-			Title:           c.Title,
-			LastMessageText: c.LastMessageText,
-			UnreadCount:     c.UnreadCount,
+		resp := s.mapChatToResponse(&c)
+		if resp != nil {
+			dtos = append(dtos, *resp)
 		}
-		dtos = append(dtos, chatDTO)
 	}
 
 	if dtosToCache, err := json.Marshal(dtos); err == nil {
@@ -81,15 +77,10 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor in
 	dtos := make([]dto.MessageResponse, 0, len(domainMessages))
 
 	for _, m := range domainMessages {
-		messageDTO := dto.MessageResponse{
-			ID:          m.ID,
-			ChatID:      m.ChatID,
-			SenderID:    m.SenderID,
-			Content:     m.Content,
-			MessageType: m.MessageType,
-			CreatedAt:   m.CreatedAt,
+		resp := s.mapMessageToResponse(&m)
+		if resp != nil {
+			dtos = append(dtos, *resp)
 		}
-		dtos = append(dtos, messageDTO)
 	}
 	return dtos, nil
 }
@@ -111,14 +102,151 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 		s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", targetID))
 	}
 
-	response := &dto.MessageResponse{
-		ID:          savedMsg.ID,
-		ChatID:      savedMsg.ChatID,
-		SenderID:    savedMsg.SenderID,
-		Content:     savedMsg.Content,
-		MessageType: savedMsg.MessageType,
-		CreatedAt:   savedMsg.CreatedAt,
+	return s.mapMessageToResponse(savedMsg), targetIDs, nil
+}
+
+func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageResponse {
+	if m == nil {
+		return nil
 	}
 
-	return response, targetIDs, nil
+	var senderDTO *dto.ProfileResponse
+	if m.Sender != nil && m.Sender.Profile != nil {
+		p := m.Sender.Profile
+		avatarURL := ""
+		if p.AvatarFile != nil {
+			avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+		}
+		senderDTO = &dto.ProfileResponse{
+			ID:          p.ID,
+			UserID:      p.UserID,
+			Nickname:    p.Nickname,
+			Bio:         p.Bio,
+			AvatarURL:   avatarURL,
+			IsOrganizer: p.IsOrganizer,
+			Tags:        []dto.TagResponse{},
+		}
+	}
+
+	return &dto.MessageResponse{
+		ID:          m.ID,
+		ChatID:      m.ChatID,
+		SenderID:    m.SenderID,
+		Sender:      senderDTO,
+		Content:     m.Content,
+		MessageType: m.MessageType,
+		CreatedAt:   m.CreatedAt,
+	}
+}
+
+func (s *ChatService) mapChatToResponse(c *domain.Chat) *dto.ChatResponse {
+	if c == nil {
+		return nil
+	}
+
+	var meetupDTO *dto.MeetupResponse
+	if c.Meetup != nil {
+		meetupDTO = s.mapMeetupToResponse(c.Meetup)
+	}
+
+	title := c.Title
+	if title == "" && meetupDTO != nil {
+		title = meetupDTO.Title
+	}
+
+	return &dto.ChatResponse{
+		ID:              c.ID,
+		Type:            c.Type,
+		MeetupID:        c.MeetupID,
+		Meetup:          meetupDTO,
+		Title:           title,
+		LastMessageText: c.LastMessageText,
+		UnreadCount:     c.UnreadCount,
+	}
+}
+
+func (s *ChatService) mapMeetupToResponse(m *domain.Meetup) *dto.MeetupResponse {
+	if m == nil {
+		return nil
+	}
+
+	var tagsDTO []dto.TagResponse
+	if len(m.Tags) > 0 {
+		tagsDTO = make([]dto.TagResponse, len(m.Tags))
+		for i, t := range m.Tags {
+			if t == nil {
+				continue
+			}
+			tagsDTO[i] = dto.TagResponse{
+				ID:   t.ID,
+				Name: t.Name,
+			}
+		}
+	} else {
+		tagsDTO = []dto.TagResponse{}
+	}
+
+	coverURL := ""
+	if m.CoverFile != nil {
+		coverURL = fmt.Sprintf("%s/%s", s.s3PublicURL, m.CoverFile.Key)
+	}
+
+	var creatorDTO *dto.ProfileResponse
+	if m.Creator != nil && m.Creator.Profile != nil {
+		p := m.Creator.Profile
+		avatarURL := ""
+		if p.AvatarFile != nil {
+			avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+		}
+		creatorDTO = &dto.ProfileResponse{
+			ID:          p.ID,
+			UserID:      p.UserID,
+			Nickname:    p.Nickname,
+			Bio:         p.Bio,
+			AvatarURL:   avatarURL,
+			IsOrganizer: p.IsOrganizer,
+			Tags:        []dto.TagResponse{},
+		}
+	}
+
+	participantsDTO := make([]*dto.ProfileResponse, 0, len(m.Participants))
+	for _, part := range m.Participants {
+		if part != nil && part.Profile != nil {
+			p := part.Profile
+			avatarURL := ""
+			if p.AvatarFile != nil {
+				avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+			}
+			participantsDTO = append(participantsDTO, &dto.ProfileResponse{
+				ID:          p.ID,
+				UserID:      p.UserID,
+				Nickname:    p.Nickname,
+				Bio:         p.Bio,
+				AvatarURL:   avatarURL,
+				IsOrganizer: p.IsOrganizer,
+				Tags:        []dto.TagResponse{},
+			})
+		}
+	}
+
+	return &dto.MeetupResponse{
+		ID:          m.ID,
+		Title:       m.Title,
+		Description: m.Description,
+		StartTime:   m.StartTime,
+		EndTime:     m.EndTime,
+		Coordinates: dto.Coordinates{
+			Lat: m.Location.Lat,
+			Lng: m.Location.Lng,
+		},
+		Address:           m.AddressText,
+		CreatorID:         m.CreatorID,
+		Creator:           creatorDTO,
+		Tags:              tagsDTO,
+		ParticipantsCount: m.ParticipantsCount,
+		Participants:      participantsDTO,
+		DistanceMeters:    nil, // Не вычисляем здесь
+		IsMember:          m.IsMember,
+		CoverURL:          coverURL,
+	}
 }
