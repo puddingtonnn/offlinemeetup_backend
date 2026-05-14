@@ -26,4 +26,6 @@ type Message struct {
 	Content     string    `bun:"content,notnull"`
 	MessageType string    `bun:"message_type,notnull,default:'text'"`
 	CreatedAt   time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+
+	Sender *User `bun:"rel:belongs-to,join:sender_id=id"`
 }

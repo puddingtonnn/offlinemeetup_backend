@@ -38,19 +38,21 @@ func (r *CreateMeetupRequest) Validate() map[string]string {
 }
 
 type MeetupResponse struct {
-	ID                int64         `json:"id"`
-	Title             string        `json:"title"`
-	Description       string        `json:"description"`
-	Tags              []TagResponse `json:"tags"`
-	StartTime         time.Time     `json:"start_time"`
-	EndTime           time.Time     `json:"end_time"`
-	Coordinates       Coordinates   `json:"coordinates"`
-	Address           string        `json:"address"`
-	CreatorID         int64         `json:"creator_id"`
-	ParticipantsCount int           `json:"participants_count"`
-	DistanceMeters    *int          `json:"distance_meters,omitempty"`
-	IsMember          bool          `json:"is_member"`
-	CoverURL          string        `json:"cover_url"`
+	ID                int64              `json:"id"`
+	Title             string             `json:"title"`
+	Description       string             `json:"description"`
+	Tags              []TagResponse      `json:"tags"`
+	StartTime         time.Time          `json:"start_time"`
+	EndTime           time.Time          `json:"end_time"`
+	Coordinates       Coordinates        `json:"coordinates"`
+	Address           string             `json:"address"`
+	CreatorID         int64              `json:"creator_id"`
+	Creator           *ProfileResponse   `json:"creator"`
+	ParticipantsCount int                `json:"participants_count"`
+	Participants      []*ProfileResponse `json:"participants,omitempty"`
+	DistanceMeters    *int               `json:"distance_meters,omitempty"`
+	IsMember          bool               `json:"is_member"`
+	CoverURL          string             `json:"cover_url"`
 }
 
 type MeetupFilter struct {

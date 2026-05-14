@@ -90,6 +90,11 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 		Model(&meetup).
 		Column("meetup.*").
 		Relation("Creator").
+		Relation("Creator.Profile").
+		Relation("Creator.Profile.AvatarFile").
+		Relation("Participants").
+		Relation("Participants.Profile").
+		Relation("Participants.Profile.AvatarFile").
 		Relation("Tags").
 		Relation("CoverFile").
 		Where("meetup.id = ?", id)
@@ -112,6 +117,8 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 	q := r.db.NewSelect().Model(&meetups)
 	q.Column("meetup.*")
 	q.Relation("Creator")
+	q.Relation("Creator.Profile")
+	q.Relation("Creator.Profile.AvatarFile")
 	q.Relation("Tags")
 	q.Relation("CoverFile")
 

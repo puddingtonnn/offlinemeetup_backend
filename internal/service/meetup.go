@@ -92,6 +92,42 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		coverURL = fmt.Sprintf("%s/%s", s.s3PublicURL, m.CoverFile.Key)
 	}
 
+	var creatorDTO *dto.ProfileResponse
+	if m.Creator != nil && m.Creator.Profile != nil {
+		p := m.Creator.Profile
+		avatarURL := ""
+		if p.AvatarFile != nil {
+			avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+		}
+		creatorDTO = &dto.ProfileResponse{
+			ID:          p.ID,
+			UserID:      p.UserID,
+			Nickname:    p.Nickname,
+			Bio:         p.Bio,
+			AvatarURL:   avatarURL,
+			IsOrganizer: p.IsOrganizer,
+		}
+	}
+
+	participantsDTO := make([]*dto.ProfileResponse, 0, len(m.Participants))
+	for _, part := range m.Participants {
+		if part.Profile != nil {
+			p := part.Profile
+			avatarURL := ""
+			if p.AvatarFile != nil {
+				avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+			}
+			participantsDTO = append(participantsDTO, &dto.ProfileResponse{
+				ID:          p.ID,
+				UserID:      p.UserID,
+				Nickname:    p.Nickname,
+				Bio:         p.Bio,
+				AvatarURL:   avatarURL,
+				IsOrganizer: p.IsOrganizer,
+			})
+		}
+	}
+
 	return &dto.MeetupResponse{
 		ID:          m.ID,
 		Title:       m.Title,
@@ -104,8 +140,10 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		},
 		Address:           m.AddressText,
 		CreatorID:         m.CreatorID,
+		Creator:           creatorDTO,
 		Tags:              tagsDTO,
 		ParticipantsCount: m.ParticipantsCount,
+		Participants:      participantsDTO,
 		DistanceMeters:    dist,
 		IsMember:          m.IsMember,
 		CoverURL:          coverURL,

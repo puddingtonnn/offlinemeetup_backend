@@ -16,6 +16,8 @@ type User struct {
 	Socials       []*SocialAccount `bun:"rel:has-many,join:id=user_id"`
 
 	Tags []*Tag `bun:"m2m:user_tags,join:User=User,join:Tag=Tag"`
+
+	Profile *Profile `bun:"rel:has-one,join:id=user_id"`
 }
 
 type SocialAccount struct {

@@ -60,6 +60,9 @@ func (r *ChatRepo) GetMessages(ctx context.Context, userID, chatID, cursor int64
 	var messages []domain.Message
 
 	query := r.db.NewSelect().Model(&messages).
+		Relation("Sender").
+		Relation("Sender.Profile").
+		Relation("Sender.Profile.AvatarFile").
 		Where("chat_id = ? AND EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ?)", chatID, chatID, userID)
 
 	if cursor > 0 {
@@ -117,6 +120,16 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 
 	if err := tx.Commit(); err != nil {
 		return nil, nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	err = r.db.NewSelect().Model(msg).
+		Relation("Sender").
+		Relation("Sender.Profile").
+		Relation("Sender.Profile.AvatarFile").
+		WherePK().
+		Scan(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load sender after save: %w", err)
 	}
 
 	return msg, targetIDs, nil

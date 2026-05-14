@@ -24,13 +24,14 @@ type ChatRepository interface {
 }
 
 type ChatService struct {
-	repo ChatRepository
-	rdb  *redis.Client
-	log  *slog.Logger
+	repo        ChatRepository
+	rdb         *redis.Client
+	log         *slog.Logger
+	s3PublicURL string
 }
 
-func NewChatService(repo ChatRepository, rdb *redis.Client, log *slog.Logger) *ChatService {
-	return &ChatService{repo: repo, rdb: rdb, log: log}
+func NewChatService(repo ChatRepository, rdb *redis.Client, log *slog.Logger, s3PublicURL string) *ChatService {
+	return &ChatService{repo: repo, rdb: rdb, log: log, s3PublicURL: s3PublicURL}
 }
 
 func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.ChatResponse, error) {
@@ -81,15 +82,7 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor in
 	dtos := make([]dto.MessageResponse, 0, len(domainMessages))
 
 	for _, m := range domainMessages {
-		messageDTO := dto.MessageResponse{
-			ID:          m.ID,
-			ChatID:      m.ChatID,
-			SenderID:    m.SenderID,
-			Content:     m.Content,
-			MessageType: m.MessageType,
-			CreatedAt:   m.CreatedAt,
-		}
-		dtos = append(dtos, messageDTO)
+		dtos = append(dtos, *s.mapMessageToResponse(&m))
 	}
 	return dtos, nil
 }
@@ -111,14 +104,34 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 		s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", targetID))
 	}
 
-	response := &dto.MessageResponse{
-		ID:          savedMsg.ID,
-		ChatID:      savedMsg.ChatID,
-		SenderID:    savedMsg.SenderID,
-		Content:     savedMsg.Content,
-		MessageType: savedMsg.MessageType,
-		CreatedAt:   savedMsg.CreatedAt,
+	return s.mapMessageToResponse(savedMsg), targetIDs, nil
+}
+
+func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageResponse {
+	var senderDTO *dto.ProfileResponse
+	if m.Sender != nil && m.Sender.Profile != nil {
+		p := m.Sender.Profile
+		avatarURL := ""
+		if p.AvatarFile != nil {
+			avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, p.AvatarFile.Key)
+		}
+		senderDTO = &dto.ProfileResponse{
+			ID:          p.ID,
+			UserID:      p.UserID,
+			Nickname:    p.Nickname,
+			Bio:         p.Bio,
+			AvatarURL:   avatarURL,
+			IsOrganizer: p.IsOrganizer,
+		}
 	}
 
-	return response, targetIDs, nil
+	return &dto.MessageResponse{
+		ID:          m.ID,
+		ChatID:      m.ChatID,
+		SenderID:    m.SenderID,
+		Sender:      senderDTO,
+		Content:     m.Content,
+		MessageType: m.MessageType,
+		CreatedAt:   m.CreatedAt,
+	}
 }
