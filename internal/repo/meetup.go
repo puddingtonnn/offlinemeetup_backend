@@ -297,5 +297,15 @@ func (r *MeetupRepo) Leave(ctx context.Context, meetupID, userID int64) error {
 		return err
 	}
 
+	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
+	if err == nil && chat != nil {
+		err = r.chatRepo.RemoveParticipant(ctx, tx, chat.ID, userID)
+		if err != nil {
+			return err
+		}
+	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+
 	return tx.Commit()
 }

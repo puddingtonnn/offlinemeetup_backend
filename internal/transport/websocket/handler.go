@@ -1,21 +1,24 @@
 package websocket
 
 import (
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"context"
 	"log"
 	"log/slog"
 	"net/http"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 )
 
 type WSHandler struct {
-	hub *Hub
-	log *slog.Logger
+	hub         *Hub
+	log         *slog.Logger
+	chatService *service.ChatService
 }
 
-func NewWebSocketHandler(hub *Hub, log *slog.Logger) *WSHandler {
-	return &WSHandler{hub: hub, log: log}
+func NewWebSocketHandler(hub *Hub, log *slog.Logger, chatService *service.ChatService) *WSHandler {
+	return &WSHandler{hub: hub, log: log, chatService: chatService}
 }
 
 // ServeWs
@@ -40,9 +43,20 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &Client{userID: userID, hub: h.hub, conn: conn, send: make(chan []byte, 256)}
+	// Создаем базовый контекст для этого конкретного соединения
+	ctx, cancel := context.WithCancel(context.Background())
+
+	client := &Client{
+		userID:      userID,
+		hub:         h.hub,
+		conn:        conn,
+		send:        make(chan []byte, 256),
+		chatService: h.chatService,
+		log:         h.log,
+	}
 	client.hub.register <- client
 
-	go client.writePump()
-	go client.readPump()
+	// Передаем контекст и функцию отмены в горутины
+	go client.writePump(ctx)
+	go client.readPump(ctx, cancel)
 }
