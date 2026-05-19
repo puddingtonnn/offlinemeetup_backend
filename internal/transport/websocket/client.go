@@ -109,6 +109,34 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 
 		c.log.Debug("user typing", slog.Int64("user", c.userID), slog.Int64("chat", req.ChatID))
 
+	case EventMessagesRead:
+		var req WSMessagesReadPayload
+		if err := json.Unmarshal(event.Payload, &req); err != nil {
+			c.sendError(ctx, event.RequestID, "invalid payload for messagesRead")
+			return
+		}
+		go func() {
+			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			targetIDs, err := c.chatService.MarkAsRead(timeoutCtx, req.ChatID, c.userID, req.LastReadMessageID)
+			if err != nil {
+				c.log.Error("failed to mark messages as read via WS", slog.Any("err", err))
+				c.sendError(ctx, event.RequestID, "failed to mark messages as read")
+				return
+			}
+
+			responseEvent := WSEvent{
+				Type:      EventMessagesRead,
+				RequestID: event.RequestID,
+				Payload:   event.Payload,
+			}
+
+			finalData, _ := json.Marshal(responseEvent)
+			c.hub.BroadcastToUsers(targetIDs, finalData)
+
+		}()
+
 	default:
 		c.log.Warn("unknown WS event type", slog.String("type", event.Type))
 		c.sendError(ctx, event.RequestID, "unknown event type")

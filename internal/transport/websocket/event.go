@@ -5,9 +5,10 @@ import (
 )
 
 const (
-	EventNewMessage = "newMessage"
-	EventUserTyping = "userTyping"
-	EventError      = "error"
+	EventNewMessage   = "newMessage"
+	EventUserTyping   = "userTyping"
+	EventError        = "error"
+	EventMessagesRead = "messagesRead"
 )
 
 type WSEvent struct {
@@ -23,4 +24,9 @@ type WSSendMessagePayload struct {
 
 type WSTypingPayload struct {
 	ChatID int64 `json:"chat_id"`
+}
+
+type WSMessagesReadPayload struct {
+	ChatID            int64 `json:"chat_id"`
+	LastReadMessageID int64 `json:"last_read_message_id"`
 }

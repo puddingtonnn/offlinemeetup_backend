@@ -146,3 +146,28 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 
 	return msg, targetIDs, nil
 }
+
+func (r *ChatRepo) MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) error {
+	_, err := r.db.NewUpdate().
+		Table("chat_participants").
+		Set("last_read_message_id = ?", lastReadMessageID).
+		Where("chat_id = ? AND user_id = ?", chatID, userID).
+		Where("last_read_message_id < ?", lastReadMessageID).
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to mark message as read: %w", err)
+	}
+	return nil
+}
+
+func (r *ChatRepo) GetChatParticipantIDs(ctx context.Context, chatID int64) ([]int64, error) {
+	var targetIDs []int64
+	err := r.db.NewSelect().
+		TableExpr("chat_participants").
+		Column("user_id").
+		Where("chat_id = ?", chatID).
+		Scan(ctx, &targetIDs)
+
+	return targetIDs, err
+}
