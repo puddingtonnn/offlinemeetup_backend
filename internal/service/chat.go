@@ -259,10 +259,18 @@ func (s *ChatService) MarkAsRead(ctx context.Context, chatID, userID, lastReadMe
 	}
 	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
 
-	var targetIDs, err = s.repo.GetChatParticipantIDs(ctx, chatID)
+	targetIDs, err := s.repo.GetChatParticipantIDs(ctx, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get participants for broadcast: %w", err)
 	}
 
 	return targetIDs, nil
+}
+
+func (s *ChatService) GetChatParticipantIDs(ctx context.Context, chatID int64) ([]int64, error) {
+	participants, err := s.repo.GetChatParticipantIDs(ctx, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get participants ids: %w", err)
+	}
+	return participants, nil
 }

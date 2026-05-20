@@ -9,6 +9,7 @@ const (
 	EventUserTyping   = "userTyping"
 	EventError        = "error"
 	EventMessagesRead = "messagesRead"
+	EventUserOnline   = "userOnline"
 )
 
 type WSEvent struct {
@@ -24,6 +25,7 @@ type WSSendMessagePayload struct {
 
 type WSTypingPayload struct {
 	ChatID int64 `json:"chat_id"`
+	UserID int64 `json:"user_id, omitempty"`
 }
 
 type WSMessagesReadPayload struct {

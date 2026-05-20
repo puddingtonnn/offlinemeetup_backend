@@ -17,7 +17,7 @@ const (
 
 	pingPeriod = (pongWait * 9) / 10
 
-	maxMessageSize = 4096 // Увеличим размер для JSON
+	maxMessageSize = 4096
 )
 
 var upgrader = websocket.Upgrader{
@@ -107,7 +107,35 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 			return
 		}
 
-		c.log.Debug("user typing", slog.Int64("user", c.userID), slog.Int64("chat", req.ChatID))
+		allIDs, err := c.chatService.GetChatParticipantIDs(ctx, req.ChatID)
+		if err != nil {
+			return
+		}
+
+		isMember := false
+		targetIDs := make([]int64, 0, len(allIDs))
+		for _, id := range allIDs {
+			if id == c.userID {
+				isMember = true
+				continue
+			}
+			targetIDs = append(targetIDs, id)
+		}
+
+		if !isMember {
+			return
+		}
+
+		req.UserID = c.userID
+		newPayload, _ := json.Marshal(req)
+
+		responseEvent := WSEvent{
+			Type:    EventUserTyping,
+			Payload: newPayload,
+		}
+
+		finalData, _ := json.Marshal(responseEvent)
+		c.hub.BroadcastToUsers(targetIDs, finalData)
 
 	case EventMessagesRead:
 		var req WSMessagesReadPayload
