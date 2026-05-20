@@ -21,6 +21,8 @@ type ChatRepository interface {
 	GetUserChats(ctx context.Context, userID int64) ([]domain.Chat, error)
 	GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]domain.Message, error)
 	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error)
+	MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) error
+	GetChatParticipantIDs(ctx context.Context, chatID int64) ([]int64, error)
 }
 
 type ChatService struct {
@@ -249,4 +251,26 @@ func (s *ChatService) mapMeetupToResponse(m *domain.Meetup) *dto.MeetupResponse 
 		IsMember:          m.IsMember,
 		CoverURL:          coverURL,
 	}
+}
+
+func (s *ChatService) MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) ([]int64, error) {
+	if err := s.repo.MarkAsRead(ctx, chatID, userID, lastReadMessageID); err != nil {
+		return nil, err
+	}
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+
+	targetIDs, err := s.repo.GetChatParticipantIDs(ctx, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get participants for broadcast: %w", err)
+	}
+
+	return targetIDs, nil
+}
+
+func (s *ChatService) GetChatParticipantIDs(ctx context.Context, chatID int64) ([]int64, error) {
+	participants, err := s.repo.GetChatParticipantIDs(ctx, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get participants ids: %w", err)
+	}
+	return participants, nil
 }

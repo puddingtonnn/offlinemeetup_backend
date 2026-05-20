@@ -140,9 +140,15 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, _ := json.Marshal(msg)
+	// Оборачиваем в конверт для WebSocket
+	respPayload, _ := json.Marshal(msg)
+	event := websocket.WSEvent{
+		Type:    websocket.EventNewMessage,
+		Payload: respPayload,
+	}
+	finalPayload, _ := json.Marshal(event)
 
-	go h.hub.BroadcastToUsers(targetIDs, payload)
+	go h.hub.BroadcastToUsers(targetIDs, finalPayload)
 
 	response.JSON(w, http.StatusCreated, msg)
 }
