@@ -31,7 +31,7 @@ type App struct {
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
-	hub := websocket.NewHub()
+	hub := websocket.NewHub(log)
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "meetuper_redis:6379",
