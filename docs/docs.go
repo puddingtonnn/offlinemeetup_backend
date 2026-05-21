@@ -488,6 +488,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/meetups/join/{token}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Вступление по инвайт-ссылке/токену",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meetups"
+                ],
+                "summary": "Вступить в приватный митап",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invite Token (UUID)",
+                        "name": "token",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/meetups/my": {
             "get": {
                 "security": [
@@ -709,7 +764,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Добавляет текущего пользователя в список участников митапа.",
+                "description": "Добавляет текущего пользователя в список участников публичного митапа.",
                 "produces": [
                     "application/json"
                 ],
@@ -744,6 +799,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Митап приватный",
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }
@@ -910,6 +971,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/profile/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает публичный профиль пользователя по его ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Profile"
+                ],
+                "summary": "Получить профиль пользователя",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/tags": {
             "get": {
                 "description": "Возвращает справочник всех доступных тегов/интересов.",
@@ -998,6 +1111,9 @@ const docTemplate = `{
                 "last_message_text": {
                     "type": "string"
                 },
+                "meetup": {
+                    "$ref": "#/definitions/dto.MeetupResponse"
+                },
                 "meetup_id": {
                     "type": "integer"
                 },
@@ -1075,6 +1191,9 @@ const docTemplate = `{
                 "cover_url": {
                     "type": "string"
                 },
+                "creator": {
+                    "$ref": "#/definitions/dto.ProfileResponse"
+                },
                 "creator_id": {
                     "type": "integer"
                 },
@@ -1090,8 +1209,20 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "invite_token": {
+                    "type": "string"
+                },
                 "is_member": {
                     "type": "boolean"
+                },
+                "is_public": {
+                    "type": "boolean"
+                },
+                "participants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ProfileResponse"
+                    }
                 },
                 "participants_count": {
                     "type": "integer"
@@ -1127,6 +1258,9 @@ const docTemplate = `{
                 },
                 "message_type": {
                     "type": "string"
+                },
+                "sender": {
+                    "$ref": "#/definitions/dto.ProfileResponse"
                 },
                 "sender_id": {
                     "type": "integer"
