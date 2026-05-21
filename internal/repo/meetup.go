@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
@@ -30,7 +31,7 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *do
 
 	meetup.ParticipantsCount = 1
 
-	_, err = tx.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at").Exec(ctx)
+	_, err = tx.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at, invite_token").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
 	}
@@ -111,6 +112,29 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 	return &meetup, nil
 }
 
+func (r *MeetupRepo) GetByInviteToken(ctx context.Context, token uuid.UUID, currentUserID int64) (*domain.Meetup, error) {
+	var meetup domain.Meetup
+
+	q := r.db.NewSelect().
+		Model(&meetup).
+		Column("meetup.*").
+		Where("meetup.invite_token = ?", token)
+
+	if currentUserID != 0 {
+		q.ColumnExpr("EXISTS (SELECT 1 FROM participants AS sub_p WHERE sub_p.meetup_id = ?TableAlias.id AND sub_p.user_id = ?) AS is_member", currentUserID)
+	}
+
+	err := q.Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &meetup, nil
+}
+
 func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error) {
 	var meetups []domain.Meetup
 
@@ -129,6 +153,17 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 		q.Where("p.user_id = ?", currentUserID)
 	} else if filter.ExcludeOwn && currentUserID != 0 {
 		q.Where("meetup.creator_id != ?", currentUserID)
+	}
+
+	if !filter.OnlyMy && !filter.OnlyCreated {
+		if currentUserID != 0 {
+			q.WhereGroup(" AND ", func(sq *bun.SelectQuery) *bun.SelectQuery {
+				return sq.Where("meetup.is_public = ?", true).
+					WhereOr("EXISTS (SELECT 1 FROM participants p2 WHERE p2.meetup_id = meetup.id AND p2.user_id = ?)", currentUserID)
+			})
+		} else {
+			q.Where("meetup.is_public = ?", true)
+		}
 	}
 
 	if filter.ShowPast {
@@ -152,11 +187,9 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 			q.Where("ST_DWithin(?TableAlias.location, ST_MakePoint(?, ?)::geography, ?)",
 				filter.Lng, filter.Lat, filter.Radius)
 		}
-		// Вычисление расстояния
 		q.ColumnExpr("ST_Distance(?TableAlias.location, ST_MakePoint(?, ?)::geography) AS distance_meters",
 			filter.Lng, filter.Lat)
 
-		// Сортировка
 		q.Order("distance_meters ASC")
 	} else {
 		q.Order("start_time ASC")
@@ -294,16 +327,6 @@ func (r *MeetupRepo) Leave(ctx context.Context, meetupID, userID int64) error {
 		Where("id = ? AND participants_count > 0", meetupID).
 		Exec(ctx)
 	if err != nil {
-		return err
-	}
-
-	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
-	if err == nil && chat != nil {
-		err = r.chatRepo.RemoveParticipant(ctx, tx, chat.ID, userID)
-		if err != nil {
-			return err
-		}
-	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 

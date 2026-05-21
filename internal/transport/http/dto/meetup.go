@@ -41,6 +41,8 @@ type MeetupResponse struct {
 	ID                int64              `json:"id"`
 	Title             string             `json:"title"`
 	Description       string             `json:"description"`
+	IsPublic          bool               `json:"is_public"`
+	InviteToken       string             `json:"invite_token"`
 	Tags              []TagResponse      `json:"tags"`
 	StartTime         time.Time          `json:"start_time"`
 	EndTime           time.Time          `json:"end_time"`

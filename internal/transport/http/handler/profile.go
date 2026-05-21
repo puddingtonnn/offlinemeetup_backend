@@ -2,12 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 	"log/slog"
 	"net/http"
+	"strconv"
 )
 
 type ProfileHandler struct {
@@ -34,6 +36,35 @@ func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
 		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+
+	profileDTO, err := h.service.GetProfile(r.Context(), userID)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, profileDTO)
+}
+
+// GetProfileByID
+// @Summary      Получить профиль пользователя
+// @Description  Возвращает публичный профиль пользователя по его ID.
+// @Tags         Profile
+// @Produce      json
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  dto.ProfileResponse
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
+// @Security     BearerAuth
+// @Router       /v1/profile/{id} [get]
+func (h *ProfileHandler) GetProfileByID(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	userID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
 		return
 	}
 

@@ -32,12 +32,14 @@ type Client struct {
 	send        chan []byte
 	chatService *service.ChatService
 	log         *slog.Logger
+	rooms       []int64
 }
 
 func (c *Client) readPump(ctx context.Context, cancel context.CancelFunc) {
 	defer func() {
 		cancel()
 		c.hub.unregister <- c
+
 		c.conn.Close()
 	}()
 
@@ -107,35 +109,17 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 			return
 		}
 
-		allIDs, err := c.chatService.GetChatParticipantIDs(ctx, req.ChatID)
-		if err != nil {
-			return
-		}
-
-		isMember := false
-		targetIDs := make([]int64, 0, len(allIDs))
-		for _, id := range allIDs {
-			if id == c.userID {
-				isMember = true
-				continue
-			}
-			targetIDs = append(targetIDs, id)
-		}
-
-		if !isMember {
-			return
-		}
-
 		req.UserID = c.userID
 		newPayload, _ := json.Marshal(req)
 
 		responseEvent := WSEvent{
-			Type:    EventUserTyping,
-			Payload: newPayload,
+			Type:      EventUserTyping,
+			RequestID: event.RequestID,
+			Payload:   newPayload,
 		}
 
 		finalData, _ := json.Marshal(responseEvent)
-		c.hub.BroadcastToUsers(targetIDs, finalData)
+		c.hub.BroadcastToRooms(req.ChatID, finalData, c)
 
 	case EventMessagesRead:
 		var req WSMessagesReadPayload

@@ -56,6 +56,16 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 	}
 	client.hub.register <- client
 
+	chats, err := h.chatService.GetUserChats(context.Background(), userID)
+	if err == nil {
+		for _, chat := range chats {
+			client.rooms = append(client.rooms, chat.ID)
+			client.hub.Subscribe(client, chat.ID)
+		}
+	} else {
+		h.log.Error("failed to get user chats for ws subscription", slog.Any("err", err))
+	}
+
 	// Передаем контекст и функцию отмены в горутины
 	go client.writePump(ctx)
 	go client.readPump(ctx, cancel)
