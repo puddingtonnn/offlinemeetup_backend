@@ -17,8 +17,9 @@ type Meetup struct {
 	CoverFileID uuid.NullUUID `bun:"type:uuid"`
 	CoverFile   *File         `bun:"rel:belongs-to,join:cover_file_id=id"`
 
-	IsPublic  bool  `bun:",notnull"`
-	CreatorID int64 `bun:",notnull"`
+	IsPublic    bool      `bun:",notnull"`
+	InviteToken uuid.UUID `bun:"type:uuid,unique,notnull,default:gen_random_uuid()"`
+	CreatorID   int64     `bun:",notnull"`
 
 	StartTime time.Time `bun:",notnull"`
 	EndTime   time.Time `bun:",notnull"`
@@ -37,7 +38,7 @@ type Meetup struct {
 	// Relations
 	Creator      *User   `bun:"rel:belongs-to,join:creator_id=id"`
 	Tags         []*Tag  `bun:"m2m:meetup_tags,join:Meetup=Tag"`
-	Participants []*User `bun:"m2m:participants,join:Meetup=User"`
+	Participants []*User `bun:"m2m:Participant,join:Meetup=User"`
 }
 
 type Participant struct {

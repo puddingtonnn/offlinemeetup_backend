@@ -49,7 +49,7 @@ func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.Pro
 		return nil, err
 	}
 	if profile == nil {
-		return nil, err
+		return nil, fmt.Errorf("profile not found: %w", ErrNotFound)
 	}
 
 	tags, err := s.userRepo.GetTagsByUserID(ctx, userID)
