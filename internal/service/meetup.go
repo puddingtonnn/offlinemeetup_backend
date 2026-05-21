@@ -14,6 +14,7 @@ import (
 type MeetupRepository interface {
 	Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error)
 	GetByID(ctx context.Context, id int64, currentUserID int64) (*domain.Meetup, error)
+	GetByInviteToken(ctx context.Context, token uuid.UUID, currentUserID int64) (*domain.Meetup, error)
 	List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error)
 	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
 	Delete(ctx context.Context, id int64) error
@@ -169,6 +170,10 @@ func (s *MeetupService) GetMeetup(ctx context.Context, id int64, userID int64) (
 		return nil, fmt.Errorf("meetup %d: %w", id, ErrNotFound)
 	}
 
+	if !m.IsPublic && !m.IsMember && m.CreatorID != userID {
+		return nil, ErrForbidden
+	}
+
 	return s.mapToResponse(m), nil
 }
 
@@ -289,6 +294,32 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 
 func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64) error {
 	if err := s.repo.Leave(ctx, meetupID, userID); err != nil {
+		return err
+	}
+
+	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	return nil
+}
+
+func (s *MeetupService) JoinMeetupByToken(ctx context.Context, userID int64, token string) error {
+	inviteUUID, err := uuid.Parse(token)
+	if err != nil {
+		return fmt.Errorf("invalid token format: %w", ErrInvalidInput)
+	}
+
+	meetup, err := s.repo.GetByInviteToken(ctx, inviteUUID, userID)
+	if err != nil {
+		return err
+	}
+	if meetup == nil {
+		return ErrNotFound
+	}
+
+	if time.Now().After(meetup.EndTime) {
+		return ErrMeetupFinished
+	}
+
+	if err := s.repo.Join(ctx, meetup.ID, userID); err != nil {
 		return err
 	}
 

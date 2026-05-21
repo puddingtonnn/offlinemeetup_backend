@@ -224,7 +224,7 @@ func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // Join
 // @Summary      Вступить в митап
-// @Description  Добавляет текущего пользователя в список участников митапа.
+// @Description  Добавляет текущего пользователя в список участников публичного митапа.
 // @Tags         Meetups
 // @Security     BearerAuth
 // @Produce      json
@@ -232,6 +232,7 @@ func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  map[string]string "Сообщение об успехе или пустой JSON"
 // @Failure      400  {object}  response.ErrorResponse
 // @Failure      401  {object}  response.ErrorResponse
+// @Failure      403  {object}  response.ErrorResponse "Митап приватный"
 // @Failure      404  {object}  response.ErrorResponse "Митап не найден"
 // @Failure      409  {object}  response.ErrorResponse "Уже участник"
 // @Failure      500  {object}  response.ErrorResponse
@@ -246,6 +247,34 @@ func (h *MeetupHandler) Join(w http.ResponseWriter, r *http.Request) {
 	meetupID, _ := strconv.ParseInt(idStr, 10, 64)
 
 	if err := h.service.JoinMeetup(r.Context(), userID, meetupID); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// JoinByToken
+// @Summary      Вступить в приватный митап
+// @Description  Вступление по инвайт-ссылке/токену
+// @Tags         Meetups
+// @Security     BearerAuth
+// @Produce      json
+// @Param        token   path      string  true  "Invite Token (UUID)"
+// @Success      200  {object}  map[string]string
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
+// @Router       /v1/meetups/join/{token} [post]
+func (h *MeetupHandler) JoinByToken(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+
+	token := chi.URLParam(r, "token")
+
+	if err := h.service.JoinMeetupByToken(r.Context(), userID, token); err != nil {
 		response.RespondError(w, err, h.log)
 		return
 	}
