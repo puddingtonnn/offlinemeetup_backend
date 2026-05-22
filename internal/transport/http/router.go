@@ -59,7 +59,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 				r.Use(authMiddleware.AuthMiddleware(cfg))
 
 				r.Post("/", meetupHandler.CreateMeetup)
-				r.Put("/{id}", meetupHandler.Update)
+				r.Patch("/{id}", meetupHandler.Update)
 				r.Delete("/{id}", meetupHandler.Delete)
 				r.Post("/{id}/join", meetupHandler.Join)
 				r.Post("/join/{token}", meetupHandler.JoinByToken)
@@ -75,7 +75,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 
 			r.Route("/profile", func(r chi.Router) {
 				r.Get("/", profileHandler.GetMyProfile)
-				r.Put("/", profileHandler.UpdateMyProfile)
+				r.Patch("/", profileHandler.UpdateMyProfile)
 				r.Get("/{id}", profileHandler.GetProfileByID)
 			})
 			r.Get("/geo/suggest", geoHandler.Suggest)
