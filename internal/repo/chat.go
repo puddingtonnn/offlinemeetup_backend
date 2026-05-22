@@ -75,13 +75,13 @@ func (r *ChatRepo) GetMessages(ctx context.Context, userID, chatID, cursor int64
 		Relation("Sender").
 		Relation("Sender.Profile").
 		Relation("Sender.Profile.AvatarFile").
-		Where("chat_id = ? AND EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ?)", chatID, chatID, userID)
+		Where("message.chat_id = ? AND EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ?)", chatID, chatID, userID)
 
 	if cursor > 0 {
-		query = query.Where("id < ?", cursor)
+		query = query.Where("message.id < ?", cursor)
 	}
 
-	err := query.Order("id DESC").Limit(limit).Scan(ctx)
+	err := query.Order("message.id DESC").Limit(limit).Scan(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("getting messages failed: %w", err)

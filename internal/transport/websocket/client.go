@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -53,8 +54,12 @@ func (c *Client) readPump(ctx context.Context, cancel context.CancelFunc) {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			var closeErr *websocket.CloseError
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
 				c.log.Error("websocket unexpected close", slog.Any("err", err))
+			} else if !errors.As(err, &closeErr) {
+				// Log non-close errors (e.g., protocol violations, unmasked frames, invalid utf-8, read timeouts)
+				c.log.Error("websocket read error", slog.Any("err", err))
 			}
 			break
 		}
