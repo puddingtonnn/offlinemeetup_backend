@@ -166,7 +166,7 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure     400    {object}  response.ErrorResponse
 // @Failure     403    {object}  response.ErrorResponse
 // @Failure     404    {object}  response.ErrorResponse
-// @Router      /v1/meetups/{id} [put]
+// @Router      /v1/meetups/{id} [patch]
 func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {

@@ -567,7 +567,7 @@ paths:
       summary: Получить митап по ID
       tags:
       - Meetups
-    put:
+    patch:
       consumes:
       - application/json
       description: Частичное обновление полей митапа. Требует прав создателя (owner).
@@ -794,7 +794,7 @@ paths:
       summary: Получить мой профиль
       tags:
       - Profile
-    put:
+    patch:
       consumes:
       - application/json
       description: Обновляет никнейм, био, аватар и теги (передавать ID тегов).

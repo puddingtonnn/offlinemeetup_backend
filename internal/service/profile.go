@@ -74,24 +74,35 @@ func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.Pro
 }
 
 func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dto.UpdateProfileRequest) (*dto.ProfileResponse, error) {
-	profile := &domain.Profile{
-		UserID:   userID,
-		Nickname: req.Nickname,
-		Bio:      req.Bio,
+	existingProfile, err := s.profileRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get profile: %w", err)
+	}
+
+	if existingProfile == nil {
+		existingProfile = &domain.Profile{UserID: userID}
+	}
+
+	if req.Nickname != nil {
+		existingProfile.Nickname = *req.Nickname
+	}
+
+	if req.Bio != nil {
+		existingProfile.Bio = *req.Bio
 	}
 
 	if req.AvatarFileID != nil {
 		if *req.AvatarFileID == "" {
-			profile.AvatarFileID = uuid.NullUUID{}
+			existingProfile.AvatarFileID = uuid.NullUUID{}
 		} else {
 			id, err := uuid.Parse(*req.AvatarFileID)
 			if err == nil {
-				profile.AvatarFileID = uuid.NullUUID{UUID: id, Valid: true}
+				existingProfile.AvatarFileID = uuid.NullUUID{UUID: id, Valid: true}
 			}
 		}
 	}
 
-	_, err := s.profileRepo.UpdateProfile(ctx, profile)
+	_, err = s.profileRepo.UpdateProfile(ctx, existingProfile)
 	if err != nil {
 		return nil, fmt.Errorf("updating profile error: %w", err)
 	}

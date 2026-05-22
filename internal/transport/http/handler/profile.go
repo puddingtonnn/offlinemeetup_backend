@@ -2,14 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
+	"net/http"
+	"strconv"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
-	"log/slog"
-	"net/http"
-	"strconv"
 )
 
 type ProfileHandler struct {
@@ -87,7 +88,7 @@ func (h *ProfileHandler) GetProfileByID(w http.ResponseWriter, r *http.Request) 
 // @Success      200  {object}  dto.ProfileResponse
 // @Failure      400  {object}  response.ErrorResponse
 // @Security     BearerAuth
-// @Router       /v1/profile [put]
+// @Router       /v1/profile [patch]
 func (h *ProfileHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
