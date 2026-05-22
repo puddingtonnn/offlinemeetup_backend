@@ -18,7 +18,7 @@ type Meetup struct {
 	CoverFile   *File         `bun:"rel:belongs-to,join:cover_file_id=id"`
 
 	IsPublic    bool      `bun:",notnull"`
-	InviteToken uuid.UUID `bun:"type:uuid,unique,notnull,default:gen_random_uuid()"`
+	InviteToken uuid.UUID `bun:"type:uuid,unique,notnull,nullzero,default:gen_random_uuid()"`
 	CreatorID   int64     `bun:",notnull"`
 
 	StartTime time.Time `bun:",notnull"`

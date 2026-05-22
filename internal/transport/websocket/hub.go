@@ -50,6 +50,10 @@ func (h *Hub) Unsubscribe(client *Client, roomID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	h.unsubscribeNoLock(client, roomID)
+}
+
+func (h *Hub) unsubscribeNoLock(client *Client, roomID int64) {
 	if rooms, ok := h.rooms[roomID]; ok {
 		delete(rooms, client)
 		if len(rooms) == 0 {
@@ -97,16 +101,18 @@ func (h *Hub) Run(ctx context.Context) {
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if clients, ok := h.userClients[client.userID]; ok {
-				delete(clients, client)
-				close(client.send)
+				if _, exists := clients[client]; exists {
+					delete(clients, client)
+					close(client.send)
 
-				if len(clients) == 0 {
-					delete(h.userClients, client.userID)
+					if len(clients) == 0 {
+						delete(h.userClients, client.userID)
+					}
 				}
 			}
 
 			for _, roomID := range client.rooms {
-				h.Unsubscribe(client, roomID)
+				h.unsubscribeNoLock(client, roomID)
 			}
 
 			h.mu.Unlock()
@@ -142,7 +148,6 @@ func (h *Hub) trySend(client *Client, payload []byte) {
 	select {
 	case client.send <- payload:
 	default:
-		close(client.send)
 		h.unregister <- client
 	}
 }

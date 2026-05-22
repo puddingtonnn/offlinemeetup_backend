@@ -142,6 +142,8 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 		ID:          m.ID,
 		Title:       m.Title,
 		Description: m.Description,
+		IsPublic:    m.IsPublic,
+		InviteToken: m.InviteToken.String(),
 		StartTime:   m.StartTime,
 		EndTime:     m.EndTime,
 		Coordinates: dto.Coordinates{
