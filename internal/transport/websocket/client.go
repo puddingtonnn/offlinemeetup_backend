@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -23,6 +24,9 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
 }
 
 type Client struct {
@@ -39,7 +43,6 @@ func (c *Client) readPump(ctx context.Context, cancel context.CancelFunc) {
 	defer func() {
 		cancel()
 		c.hub.unregister <- c
-
 		c.conn.Close()
 	}()
 
@@ -175,10 +178,11 @@ func (c *Client) sendError(ctx context.Context, requestID, message string) {
 	}
 }
 
-func (c *Client) writePump(ctx context.Context) {
+func (c *Client) writePump(ctx context.Context, cancel context.CancelFunc) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
+		cancel()
 	}()
 
 	for {
@@ -192,18 +196,7 @@ func (c *Client) writePump(ctx context.Context) {
 				return
 			}
 
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			w.Write(message)
-
-			n := len(c.send)
-			for i := 0; i < n; i++ {
-				w.Write(<-c.send)
-			}
-
-			if err := w.Close(); err != nil {
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 		case <-ticker.C:

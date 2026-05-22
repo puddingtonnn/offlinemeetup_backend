@@ -67,6 +67,6 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Передаем контекст и функцию отмены в горутины
-	go client.writePump(ctx)
+	go client.writePump(ctx, cancel)
 	go client.readPump(ctx, cancel)
 }
