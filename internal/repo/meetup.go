@@ -171,6 +171,7 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 		q.Order("meetup.end_time DESC")
 	} else {
 		q.Where("meetup.end_time > ?", time.Now())
+		q.Where("meetup.status = ?", "active")
 		if filter.OnlyMy {
 			q.Order("p.joined_at DESC")
 
@@ -244,8 +245,31 @@ func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagID
 }
 
 func (r *MeetupRepo) Delete(ctx context.Context, id int64) error {
-	_, err := r.db.NewDelete().Model((*domain.Meetup)(nil)).Where("id = ?", id).Exec(ctx)
-	return err
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.NewUpdate().
+		Model((*domain.Meetup)(nil)).
+		Set("status = ?", "cancelled").
+		Where("id = ?", id).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.NewUpdate().
+		Model((*domain.Chat)(nil)).
+		Set("is_read_only = ?", true).
+		Where("meetup_id = ?", id).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {

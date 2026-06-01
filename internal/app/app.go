@@ -40,7 +40,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	})
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Error("failed to connect to redis", err)
+		log.Error("failed to connect to redis", "err", err)
 	}
 
 	// AWS SDK v2 Config

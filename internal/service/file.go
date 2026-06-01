@@ -17,13 +17,17 @@ type FileRepository interface {
 	Create(ctx context.Context, file *domain.File) error
 }
 
+type S3PutObjectAPI interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
 type FileService struct {
 	repo     FileRepository
-	s3Client *s3.Client
+	s3Client S3PutObjectAPI
 	cfg      *config.Config
 }
 
-func NewFileService(repo FileRepository, s3Client *s3.Client, cfg *config.Config) *FileService {
+func NewFileService(repo FileRepository, s3Client S3PutObjectAPI, cfg *config.Config) *FileService {
 	return &FileService{
 		repo:     repo,
 		s3Client: s3Client,

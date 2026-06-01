@@ -48,6 +48,7 @@ type MeetupResponse struct {
 	EndTime           time.Time          `json:"end_time"`
 	Coordinates       Coordinates        `json:"coordinates"`
 	Address           string             `json:"address"`
+	Status            string             `json:"status"`
 	CreatorID         int64              `json:"creator_id"`
 	Creator           *ProfileResponse   `json:"creator"`
 	ParticipantsCount int                `json:"participants_count"`

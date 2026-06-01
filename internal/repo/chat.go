@@ -97,6 +97,19 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 	}
 	defer tx.Rollback()
 
+	var isReadOnly bool
+	err = tx.NewSelect().
+		Table("chats").
+		Column("is_read_only").
+		Where("id = ?", msg.ChatID).
+		Scan(ctx, &isReadOnly)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check chat status: %w", err)
+	}
+	if isReadOnly && msg.SenderID != 0 { // Allow system messages (SenderID=0)
+		return nil, nil, fmt.Errorf("chat is read-only")
+	}
+
 	exists, err := tx.NewSelect().
 		TableExpr("chat_participants").
 		Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).

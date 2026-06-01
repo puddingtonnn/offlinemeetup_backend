@@ -27,6 +27,8 @@ type Meetup struct {
 	Location    Location `bun:"location,type:geography(POINT,4326)"`
 	AddressText string   `bun:""`
 
+	Status string `bun:"status,notnull,default:'active'"`
+
 	CreatedAt time.Time  `bun:",nullzero,notnull,default:current_timestamp"`
 	DeletedAt *time.Time `bun:",soft_delete,nullzero"`
 
