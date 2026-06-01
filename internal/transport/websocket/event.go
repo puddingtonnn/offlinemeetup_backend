@@ -24,8 +24,9 @@ type WSSendMessagePayload struct {
 }
 
 type WSTypingPayload struct {
-	ChatID int64 `json:"chat_id"`
-	UserID int64 `json:"user_id,omitempty"`
+	ChatID   int64  `json:"chat_id"`
+	UserID   int64  `json:"user_id,omitempty"`
+	Nickname string `json:"nickname,omitempty"`
 }
 
 type WSMessagesReadPayload struct {

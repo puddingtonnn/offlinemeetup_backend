@@ -12,13 +12,14 @@ import (
 )
 
 type WSHandler struct {
-	hub         *Hub
-	log         *slog.Logger
-	chatService *service.ChatService
+	hub            *Hub
+	log            *slog.Logger
+	chatService    *service.ChatService
+	profileService *service.ProfileService
 }
 
-func NewWebSocketHandler(hub *Hub, log *slog.Logger, chatService *service.ChatService) *WSHandler {
-	return &WSHandler{hub: hub, log: log, chatService: chatService}
+func NewWebSocketHandler(hub *Hub, log *slog.Logger, chatService *service.ChatService, profileService *service.ProfileService) *WSHandler {
+	return &WSHandler{hub: hub, log: log, chatService: chatService, profileService: profileService}
 }
 
 // ServeWs
@@ -43,11 +44,19 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Получаем никнейм один раз при подключении
+	nickname := "User"
+	profile, err := h.profileService.GetProfile(r.Context(), userID)
+	if err == nil && profile != nil {
+		nickname = profile.Nickname
+	}
+
 	// Создаем базовый контекст для этого конкретного соединения
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &Client{
 		userID:      userID,
+		nickname:    nickname,
 		hub:         h.hub,
 		conn:        conn,
 		send:        make(chan []byte, 256),
