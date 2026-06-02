@@ -8,6 +8,7 @@ type ChatResponse struct {
 	MeetupID        *int64          `json:"meetup_id,omitempty"`
 	Meetup          *MeetupResponse `json:"meetup,omitempty"`
 	Title           string          `json:"title"`
+	IsReadOnly      bool            `json:"is_read_only"`
 	LastMessageText string          `json:"last_message_text"`
 	UnreadCount     int             `json:"unread_count"`
 }

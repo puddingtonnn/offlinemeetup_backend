@@ -7,6 +7,7 @@ type Chat struct {
 	Type            string    `bun:"type,notnull"`
 	MeetupID        *int64    `bun:"meetup_id"`
 	Title           string    `bun:"title"`
+	IsReadOnly      bool      `bun:"is_read_only,notnull,default:false"`
 	CreatedAt       time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 	LastMessageText string    `bun:"last_message_text,scanonly"`
 	UnreadCount     int       `bun:"unread_count,scanonly"`

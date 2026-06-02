@@ -151,6 +151,7 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 			Lng: m.Location.Lng,
 		},
 		Address:           m.AddressText,
+		Status:            m.Status,
 		CreatorID:         m.CreatorID,
 		Creator:           creatorDTO,
 		Tags:              tagsDTO,

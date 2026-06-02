@@ -32,6 +32,7 @@ var upgrader = websocket.Upgrader{
 
 type Client struct {
 	userID      int64
+	nickname    string
 	hub         *Hub
 	conn        *websocket.Conn
 	send        chan []byte
@@ -118,6 +119,7 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 		}
 
 		req.UserID = c.userID
+		req.Nickname = c.nickname
 		newPayload, _ := json.Marshal(req)
 
 		responseEvent := WSEvent{

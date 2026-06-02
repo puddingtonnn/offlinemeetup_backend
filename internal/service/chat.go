@@ -162,6 +162,7 @@ func (s *ChatService) mapChatToResponse(c *domain.Chat) *dto.ChatResponse {
 		MeetupID:        c.MeetupID,
 		Meetup:          meetupDTO,
 		Title:           title,
+		IsReadOnly:      c.IsReadOnly,
 		LastMessageText: c.LastMessageText,
 		UnreadCount:     c.UnreadCount,
 	}
