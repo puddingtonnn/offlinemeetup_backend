@@ -34,9 +34,9 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	hub := websocket.NewHub(log)
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "meetuper_redis:6379",
-		Password: "",
-		DB:       0,
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
 	})
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {

@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
-	"github.com/joho/godotenv"
 	"os"
+	"strconv"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -21,6 +23,10 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	S3PublicURL string
+
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
 }
 
 func Load() (*Config, error) {
@@ -41,6 +47,18 @@ func Load() (*Config, error) {
 		S3AccessKey: os.Getenv("S3_ACCESS_KEY"),
 		S3SecretKey: os.Getenv("S3_SECRET_KEY"),
 		S3PublicURL: os.Getenv("S3_PUBLIC_URL"),
+
+		RedisAddr:     os.Getenv("REDIS_ADDR"),
+		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+	}
+
+	if cfg.RedisAddr == "" {
+		cfg.RedisAddr = "meetuper_redis:6379"
+	}
+	if dbStr := os.Getenv("REDIS_DB"); dbStr != "" {
+		if n, err := strconv.Atoi(dbStr); err == nil {
+			cfg.RedisDB = n
+		}
 	}
 
 	if cfg.AppPort == "" {
