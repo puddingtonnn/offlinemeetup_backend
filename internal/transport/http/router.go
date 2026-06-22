@@ -22,6 +22,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 	chatHandler *handler.ChatHandler,
 	wsHandler *websocket.WSHandler,
 	fileHandler *handler.FileHandler,
+	statusChecker authMiddleware.UserStatusChecker,
 	cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
@@ -57,7 +58,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 			})
 
 			r.Group(func(r chi.Router) {
-				r.Use(authMiddleware.AuthMiddleware(cfg))
+				r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 				r.Post("/", meetupHandler.CreateMeetup)
 				r.Patch("/{id}", meetupHandler.Update)
@@ -70,7 +71,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 		})
 
 		r.Group(func(r chi.Router) {
-			r.Use(authMiddleware.AuthMiddleware(cfg))
+			r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 			r.Get("/auth/me", authHandler.Me)
 
@@ -85,7 +86,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 		})
 
 		r.Route("/chats", func(r chi.Router) {
-			r.Use(authMiddleware.AuthMiddleware(cfg))
+			r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 			r.Get("/", chatHandler.GetUserChats)
 			r.Post("/{id}/messages", chatHandler.SendMessage)
@@ -93,7 +94,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 		})
 
 		r.Route("/ws", func(r chi.Router) {
-			r.Use(authMiddleware.AuthMiddleware(cfg))
+			r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 			r.Get("/", wsHandler.ServeWs)
 		})

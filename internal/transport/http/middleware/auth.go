@@ -9,7 +9,14 @@ import (
 	"strings"
 )
 
-func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+// UserStatusChecker сообщает, активен ли аккаунт пользователя.
+// Позволяет немедленно отзывать доступ забаненным пользователям,
+// у которых ещё жив выданный JWT.
+type UserStatusChecker interface {
+	IsActive(ctx context.Context, userID int64) (bool, error)
+}
+
+func AuthMiddleware(cfg *config.Config, statusChecker UserStatusChecker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -28,6 +35,18 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			if err != nil {
 				http.Error(w, "invalid or expired token", http.StatusUnauthorized)
 				return
+			}
+
+			if statusChecker != nil {
+				active, err := statusChecker.IsActive(r.Context(), userID)
+				if err != nil {
+					http.Error(w, "failed to verify account", http.StatusInternalServerError)
+					return
+				}
+				if !active {
+					http.Error(w, "account is not active", http.StatusForbidden)
+					return
+				}
 			}
 
 			ctx := context.WithValue(r.Context(), UserIDKey, userID)

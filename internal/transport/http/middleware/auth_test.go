@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -38,9 +40,20 @@ func echoHandler() http.HandlerFunc {
 	}
 }
 
+// stubChecker — управляемая заглушка UserStatusChecker.
+type stubChecker struct {
+	active bool
+	err    error
+}
+
+func (s stubChecker) IsActive(_ context.Context, _ int64) (bool, error) {
+	return s.active, s.err
+}
+
 func TestAuthMiddleware(t *testing.T) {
 	cfg := &config.Config{JWTSecret: testSecret}
-	handler := AuthMiddleware(cfg)(echoHandler())
+	// nil-чекер => проверка статуса пропускается (как и раньше).
+	handler := AuthMiddleware(cfg, nil)(echoHandler())
 
 	tests := []struct {
 		name       string
@@ -95,6 +108,33 @@ func TestAuthMiddleware(t *testing.T) {
 			if tt.wantBody != "" {
 				assert.Equal(t, tt.wantBody, rec.Body.String())
 			}
+		})
+	}
+}
+
+func TestAuthMiddleware_StatusCheck(t *testing.T) {
+	cfg := &config.Config{JWTSecret: testSecret}
+	token := "Bearer " + makeToken(t, testSecret, 42, time.Now().Add(time.Hour))
+
+	tests := []struct {
+		name       string
+		checker    stubChecker
+		wantStatus int
+	}{
+		{"active user passes", stubChecker{active: true}, http.StatusOK},
+		{"banned user forbidden", stubChecker{active: false}, http.StatusForbidden},
+		{"checker error -> 500", stubChecker{err: errors.New("db down")}, http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := AuthMiddleware(cfg, tt.checker)(echoHandler())
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Authorization", token)
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+			assert.Equal(t, tt.wantStatus, rec.Code)
 		})
 	}
 }

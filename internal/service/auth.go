@@ -153,6 +153,19 @@ func (s *AuthService) CreateDevToken(ctx context.Context, email string) (string,
 	return token, err
 }
 
+// IsActive проверяет, что аккаунт существует и находится в статусе active.
+// Используется AuthMiddleware для немедленного отзыва доступа.
+func (s *AuthService) IsActive(ctx context.Context, userID int64) (bool, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, nil
+	}
+	return user.Status == domain.UserStatusActive, nil
+}
+
 func (s *AuthService) GetCurrentUser(ctx context.Context, userID int64) (*dto.UserResponse, error) {
 	user, err := s.repo.GetByID(ctx, userID)
 	if err != nil {

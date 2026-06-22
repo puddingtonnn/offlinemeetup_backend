@@ -246,6 +246,44 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 	})
 }
 
+func TestAuthService_IsActive(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{}
+
+	tests := []struct {
+		name       string
+		user       *domain.User
+		repoErr    error
+		wantActive bool
+		wantErr    bool
+	}{
+		{"active", &domain.User{ID: 1, Status: domain.UserStatusActive}, nil, true, false},
+		{"banned", &domain.User{ID: 1, Status: domain.UserStatusBanned}, nil, false, false},
+		{"inactive", &domain.User{ID: 1, Status: domain.UserStatusInactive}, nil, false, false},
+		{"not found", nil, nil, false, false},
+		{"repo error", nil, errors.New("db down"), false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			repo := mocks.NewMockAuthRepository(ctrl)
+			srv := NewAuthService(repo, cfg)
+
+			repo.EXPECT().GetByID(ctx, int64(1)).Return(tt.user, tt.repoErr)
+
+			active, err := srv.IsActive(ctx, 1)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tt.wantActive, active)
+		})
+	}
+}
+
 func TestAuthService_GetCurrentUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
