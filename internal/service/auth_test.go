@@ -2,7 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"net/url"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +19,119 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
+
+// computeTelegramHash повторяет алгоритм подписи Telegram, чтобы сгенерировать
+// валидный hash для теста.
+func computeTelegramHash(botToken string, params url.Values) string {
+	var keys []string
+	for k := range params {
+		if k == "hash" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, k+"="+params.Get(k))
+	}
+	dataCheckString := strings.Join(parts, "\n")
+
+	secret := sha256.Sum256([]byte(botToken))
+	mac := hmac.New(sha256.New, secret[:])
+	mac.Write([]byte(dataCheckString))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func TestAuthService_validateTelegramHash(t *testing.T) {
+	cfg := &config.Config{TelegramBotToken: "bot-token"}
+	srv := NewAuthService(nil, cfg)
+
+	baseParams := func() url.Values {
+		p := url.Values{}
+		p.Set("id", "12345")
+		p.Set("first_name", "John")
+		p.Set("auth_date", "1700000000")
+		return p
+	}
+
+	t.Run("valid hash", func(t *testing.T) {
+		p := baseParams()
+		p.Set("hash", computeTelegramHash("bot-token", p))
+		assert.True(t, srv.validateTelegramHash(p))
+	})
+
+	t.Run("tampered field", func(t *testing.T) {
+		p := baseParams()
+		p.Set("hash", computeTelegramHash("bot-token", p))
+		// Подменяем данные после расчёта подписи.
+		p.Set("first_name", "Mallory")
+		assert.False(t, srv.validateTelegramHash(p))
+	})
+
+	t.Run("wrong hash", func(t *testing.T) {
+		p := baseParams()
+		p.Set("hash", "deadbeef")
+		assert.False(t, srv.validateTelegramHash(p))
+	})
+
+	t.Run("missing hash", func(t *testing.T) {
+		assert.False(t, srv.validateTelegramHash(baseParams()))
+	})
+
+	t.Run("wrong bot token", func(t *testing.T) {
+		p := baseParams()
+		p.Set("hash", computeTelegramHash("other-token", p))
+		assert.False(t, srv.validateTelegramHash(p))
+	})
+}
+
+func TestAuthService_LoginTelegram(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{TelegramBotToken: "bot-token", JWTSecret: "secret"}
+
+	params := url.Values{}
+	params.Set("id", "555")
+	params.Set("first_name", "John")
+	params.Set("auth_date", "1700000000")
+
+	t.Run("valid hash for existing user", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		repo := mocks.NewMockAuthRepository(ctrl)
+		srv := NewAuthService(repo, cfg)
+
+		p := url.Values{}
+		for k, v := range params {
+			p[k] = v
+		}
+		p.Set("hash", computeTelegramHash("bot-token", p))
+
+		repo.EXPECT().GetBySocialID(ctx, "telegram", "555").Return(&domain.User{ID: 7}, nil)
+
+		token, err := srv.LoginTelegram(ctx, p)
+		assert.NoError(t, err)
+		assert.NotEmpty(t, token)
+	})
+
+	t.Run("invalid hash rejected without repo call", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		repo := mocks.NewMockAuthRepository(ctrl)
+		srv := NewAuthService(repo, cfg)
+
+		p := url.Values{}
+		for k, v := range params {
+			p[k] = v
+		}
+		p.Set("hash", "deadbeef")
+
+		token, err := srv.LoginTelegram(ctx, p)
+		assert.Error(t, err)
+		assert.Empty(t, token)
+	})
+}
 
 func TestAuthService_CreateDevToken(t *testing.T) {
 	ctrl := gomock.NewController(t)

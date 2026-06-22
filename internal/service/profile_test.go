@@ -140,3 +140,55 @@ func TestProfileService_GetProfile(t *testing.T) {
 		})
 	}
 }
+
+func TestProfileService_UpdateProfile(t *testing.T) {
+	testUserID := int64(1)
+
+	t.Run("обновление полей и тегов", func(t *testing.T) {
+		repo := new(MockProfileRepo)
+		tagRepo := new(MockUserTagUpdater)
+
+		existing := &domain.Profile{ID: 100, UserID: testUserID, Nickname: "old"}
+		// GetByUserID вызывается дважды: в UpdateProfile и затем в GetProfile.
+		repo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
+		repo.On("UpdateProfile", mock.Anything, mock.Anything).Return(existing, nil)
+		tagRepo.On("UpdateTags", mock.Anything, testUserID, []int64{1, 2}).Return(nil)
+		tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).
+			Return([]domain.Tag{{ID: 1, Name: "Go"}}, nil)
+
+		svc := NewProfileService(repo, tagRepo, "https://s3.local")
+
+		newNick := "new"
+		resp, err := svc.UpdateProfile(context.Background(), testUserID, dto.UpdateProfileRequest{
+			Nickname: &newNick,
+			TagIDs:   []int64{1, 2},
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, "new", resp.Nickname)
+		assert.Len(t, resp.Tags, 1)
+		repo.AssertExpectations(t)
+		tagRepo.AssertExpectations(t)
+	})
+
+	t.Run("без тегов UpdateTags не вызывается", func(t *testing.T) {
+		repo := new(MockProfileRepo)
+		tagRepo := new(MockUserTagUpdater)
+
+		existing := &domain.Profile{ID: 100, UserID: testUserID, Nickname: "old"}
+		repo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
+		repo.On("UpdateProfile", mock.Anything, mock.Anything).Return(existing, nil)
+		tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).
+			Return([]domain.Tag{}, nil)
+
+		svc := NewProfileService(repo, tagRepo, "https://s3.local")
+
+		newBio := "hello"
+		_, err := svc.UpdateProfile(context.Background(), testUserID, dto.UpdateProfileRequest{
+			Bio: &newBio,
+		})
+
+		assert.NoError(t, err)
+		tagRepo.AssertNotCalled(t, "UpdateTags", mock.Anything, mock.Anything, mock.Anything)
+	})
+}

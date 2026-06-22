@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo/mocks"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
 func setupChatTest(t *testing.T) (*miniredis.Miniredis, *redis.Client, *mocks.MockChatRepository, *ChatService) {
@@ -87,4 +89,86 @@ func TestChatService_SendMessage(t *testing.T) {
 	assert.False(t, mr.Exists("user_chats:1"))
 	assert.False(t, mr.Exists("user_chats:2"))
 	assert.False(t, mr.Exists("user_chats:3"))
+}
+
+func TestChatService_GetUserChats(t *testing.T) {
+	ctx := context.Background()
+	userID := int64(1)
+
+	t.Run("cache miss loads from repo and caches", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupChatTest(t)
+		defer mr.Close()
+
+		meetupID := int64(500)
+		mockRepo.EXPECT().
+			GetUserChats(ctx, userID).
+			Return([]domain.Chat{
+				// Чат с привязанным митапом — задействует mapMeetupToResponse,
+				// при пустом Title заголовок берётся из митапа.
+				{ID: 10, Type: "group", MeetupID: &meetupID, Meetup: &domain.Meetup{ID: meetupID, Title: "Митап A"}},
+				{ID: 11, Type: "group", Title: "Chat B"},
+			}, nil)
+
+		resp, err := svc.GetUserChats(ctx, userID)
+		require.NoError(t, err)
+		require.Len(t, resp, 2)
+		assert.Equal(t, int64(10), resp[0].ID)
+		assert.Equal(t, "Митап A", resp[0].Title)
+		require.NotNil(t, resp[0].Meetup)
+
+		// Результат должен быть закэширован.
+		assert.True(t, mr.Exists("user_chats:1"))
+	})
+
+	t.Run("cache hit returns without touching repo", func(t *testing.T) {
+		mr, rdb, _, svc := setupChatTest(t)
+		defer mr.Close()
+
+		cached, _ := json.Marshal([]dto.ChatResponse{{ID: 99, Title: "Cached"}})
+		require.NoError(t, rdb.Set(ctx, "user_chats:1", cached, 0).Err())
+
+		// Отсутствие EXPECT на mockRepo => вызов репозитория провалит тест.
+		resp, err := svc.GetUserChats(ctx, userID)
+		require.NoError(t, err)
+		require.Len(t, resp, 1)
+		assert.Equal(t, int64(99), resp[0].ID)
+		assert.Equal(t, "Cached", resp[0].Title)
+	})
+}
+
+func TestChatService_MarkAsRead(t *testing.T) {
+	mr, rdb, mockRepo, svc := setupChatTest(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+	userID := int64(1)
+	chatID := int64(100)
+	lastReadID := int64(50)
+
+	// Заранее кладём кэш, чтобы проверить его инвалидацию.
+	require.NoError(t, rdb.Set(ctx, "user_chats:1", "[]", 0).Err())
+
+	mockRepo.EXPECT().MarkAsRead(ctx, chatID, userID, lastReadID).Return(nil)
+	mockRepo.EXPECT().GetChatParticipantIDs(ctx, chatID).Return([]int64{1, 2, 3}, nil)
+
+	targetIDs, err := svc.MarkAsRead(ctx, chatID, userID, lastReadID)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []int64{1, 2, 3}, targetIDs)
+
+	// Кэш читателя должен быть сброшен.
+	assert.False(t, mr.Exists("user_chats:1"))
+}
+
+func TestChatService_GetChatParticipantIDs(t *testing.T) {
+	mr, _, mockRepo, svc := setupChatTest(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+	chatID := int64(100)
+
+	mockRepo.EXPECT().GetChatParticipantIDs(ctx, chatID).Return([]int64{1, 2, 3}, nil)
+
+	ids, err := svc.GetChatParticipantIDs(ctx, chatID)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []int64{1, 2, 3}, ids)
 }
