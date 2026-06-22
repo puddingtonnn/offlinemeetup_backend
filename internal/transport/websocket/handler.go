@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/gorilla/websocket"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
@@ -16,10 +17,17 @@ type WSHandler struct {
 	log            *slog.Logger
 	chatService    *service.ChatService
 	profileService *service.ProfileService
+	upgrader       websocket.Upgrader
 }
 
-func NewWebSocketHandler(hub *Hub, log *slog.Logger, chatService *service.ChatService, profileService *service.ProfileService) *WSHandler {
-	return &WSHandler{hub: hub, log: log, chatService: chatService, profileService: profileService}
+func NewWebSocketHandler(hub *Hub, log *slog.Logger, chatService *service.ChatService, profileService *service.ProfileService, allowedOrigins []string) *WSHandler {
+	return &WSHandler{
+		hub:            hub,
+		log:            log,
+		chatService:    chatService,
+		profileService: profileService,
+		upgrader:       newUpgrader(allowedOrigins),
+	}
 }
 
 // ServeWs
@@ -38,7 +46,7 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return

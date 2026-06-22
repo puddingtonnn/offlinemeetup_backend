@@ -82,7 +82,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	tagHandler := handler.NewTagHandler(tagService, log)
 	geoHandler := handler.NewGeoHandler(geoService)
 	chatHandler := handler.NewChatHandler(chatService, hub, log)
-	wsHandler := websocket.NewWebSocketHandler(hub, log, chatService, profileService)
+	wsHandler := websocket.NewWebSocketHandler(hub, log, chatService, profileService, cfg.WSAllowedOrigins)
 	fileHandler := handler.NewFileHandler(fileService, log)
 
 	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, authService, cfg)

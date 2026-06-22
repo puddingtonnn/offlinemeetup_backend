@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -27,6 +28,8 @@ type Config struct {
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
+
+	WSAllowedOrigins []string
 }
 
 func Load() (*Config, error) {
@@ -58,6 +61,14 @@ func Load() (*Config, error) {
 	if dbStr := os.Getenv("REDIS_DB"); dbStr != "" {
 		if n, err := strconv.Atoi(dbStr); err == nil {
 			cfg.RedisDB = n
+		}
+	}
+
+	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, o)
+			}
 		}
 	}
 
