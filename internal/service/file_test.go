@@ -99,4 +99,29 @@ func TestFileService_Upload(t *testing.T) {
 		assert.ErrorContains(t, err, "failed to save file metadata")
 		assert.Nil(t, file)
 	})
+
+	t.Run("rejects unsupported mime type", func(t *testing.T) {
+		// S3 не должен вызываться, repo тоже.
+		srv := NewFileService(repo, &mockS3Client{}, cfg)
+
+		file, err := srv.Upload(ctx, "evil.html", "text/html", size, strings.NewReader("x"))
+		assert.ErrorIs(t, err, ErrInvalidInput)
+		assert.Nil(t, file)
+	})
+
+	t.Run("rejects oversize file", func(t *testing.T) {
+		srv := NewFileService(repo, &mockS3Client{}, cfg)
+
+		file, err := srv.Upload(ctx, "big.png", "image/png", maxFileSize+1, strings.NewReader("x"))
+		assert.ErrorIs(t, err, ErrInvalidInput)
+		assert.Nil(t, file)
+	})
+
+	t.Run("rejects zero size", func(t *testing.T) {
+		srv := NewFileService(repo, &mockS3Client{}, cfg)
+
+		file, err := srv.Upload(ctx, "empty.png", "image/png", 0, strings.NewReader(""))
+		assert.ErrorIs(t, err, ErrInvalidInput)
+		assert.Nil(t, file)
+	})
 }

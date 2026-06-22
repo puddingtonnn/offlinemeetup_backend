@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -94,7 +95,7 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 	params := url.Values{}
 	params.Set("id", "555")
 	params.Set("first_name", "John")
-	params.Set("auth_date", "1700000000")
+	params.Set("auth_date", strconv.FormatInt(time.Now().Unix(), 10))
 
 	t.Run("valid hash for existing user", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
@@ -127,6 +128,25 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		}
 		p.Set("hash", "deadbeef")
 
+		token, err := srv.LoginTelegram(ctx, p)
+		assert.Error(t, err)
+		assert.Empty(t, token)
+	})
+
+	t.Run("expired auth_date rejected (replay protection)", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		repo := mocks.NewMockAuthRepository(ctrl)
+		srv := NewAuthService(repo, cfg)
+
+		p := url.Values{}
+		p.Set("id", "555")
+		p.Set("first_name", "John")
+		// auth_date двухдневной давности — за пределами TTL.
+		p.Set("auth_date", strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10))
+		p.Set("hash", computeTelegramHash("bot-token", p))
+
+		// Хэш валиден, но данные просрочены => репозиторий не вызывается.
 		token, err := srv.LoginTelegram(ctx, p)
 		assert.Error(t, err)
 		assert.Empty(t, token)

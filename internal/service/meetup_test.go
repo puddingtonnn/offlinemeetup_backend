@@ -343,16 +343,40 @@ func TestMeetupService_DeleteMeetup(t *testing.T) {
 }
 
 func TestMeetupService_LeaveMeetup(t *testing.T) {
-	mr, _, mockRepo, svc := setupMeetupTest(t)
-	defer mr.Close()
-
 	ctx := context.Background()
 	userID := int64(1)
 	meetupID := int64(100)
 
-	mockRepo.EXPECT().Leave(ctx, meetupID, userID).Return(nil)
+	t.Run("participant leaves", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
 
-	require.NoError(t, svc.LeaveMeetup(ctx, userID, meetupID))
+		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).
+			Return(&domain.Meetup{ID: meetupID, CreatorID: 999}, nil)
+		mockRepo.EXPECT().Leave(ctx, meetupID, userID).Return(nil)
+
+		require.NoError(t, svc.LeaveMeetup(ctx, userID, meetupID))
+	})
+
+	t.Run("organizer cannot leave", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
+		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).
+			Return(&domain.Meetup{ID: meetupID, CreatorID: userID}, nil)
+		// Leave не должен вызываться.
+
+		require.ErrorIs(t, svc.LeaveMeetup(ctx, userID, meetupID), ErrOrganizerCannotLeave)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
+		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(nil, nil)
+
+		require.ErrorIs(t, svc.LeaveMeetup(ctx, userID, meetupID), ErrNotFound)
+	})
 }
 
 func TestMeetupService_ListMeetups(t *testing.T) {

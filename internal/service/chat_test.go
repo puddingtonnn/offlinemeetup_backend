@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,6 +158,27 @@ func TestChatService_MarkAsRead(t *testing.T) {
 
 	// Кэш читателя должен быть сброшен.
 	assert.False(t, mr.Exists("user_chats:1"))
+}
+
+func TestChatService_SendMessage_Validation(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects empty content", func(t *testing.T) {
+		mr, _, _, svc := setupChatTest(t)
+		defer mr.Close()
+
+		// Репозиторий не должен вызываться (нет EXPECT).
+		_, _, err := svc.SendMessage(ctx, 100, 1, "   ")
+		require.ErrorIs(t, err, ErrInvalidInput)
+	})
+
+	t.Run("rejects too long content", func(t *testing.T) {
+		mr, _, _, svc := setupChatTest(t)
+		defer mr.Close()
+
+		_, _, err := svc.SendMessage(ctx, 100, 1, strings.Repeat("a", 4097))
+		require.ErrorIs(t, err, ErrInvalidInput)
+	})
 }
 
 func TestChatService_GetChatParticipantIDs(t *testing.T) {
