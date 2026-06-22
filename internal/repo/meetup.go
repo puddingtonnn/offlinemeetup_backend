@@ -18,8 +18,8 @@ type MeetupRepo struct {
 	chatRepo *ChatRepo
 }
 
-func NewMeetupRepo(db *bun.DB) *MeetupRepo {
-	return &MeetupRepo{db: db, chatRepo: NewChatRepo(db)}
+func NewMeetupRepo(db *bun.DB, chatRepo *ChatRepo) *MeetupRepo {
+	return &MeetupRepo{db: db, chatRepo: chatRepo}
 }
 
 func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error) {

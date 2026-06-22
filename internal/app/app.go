@@ -63,9 +63,9 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
 	userRepo := repo.NewUserRepo(db)
 	profileRepo := repo.NewProfileRepo(db)
-	meetupRepo := repo.NewMeetupRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	chatRepo := repo.NewChatRepo(db)
+	meetupRepo := repo.NewMeetupRepo(db, chatRepo)
 	fileRepo := repo.NewFileRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
