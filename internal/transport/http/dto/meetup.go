@@ -20,21 +20,42 @@ type CreateMeetupRequest struct {
 }
 
 func (r *CreateMeetupRequest) Validate() map[string]string {
-	errors := make(map[string]string)
+	errs := make(map[string]string)
 	if len(r.Title) < 3 {
-		errors["title"] = "must be at least 3 chars"
+		errs["title"] = "must be at least 3 chars"
 	}
 	if r.StartTime.Before(time.Now()) {
-		errors["start_time"] = "cannot be in the past"
+		errs["start_time"] = "cannot be in the past"
 	}
 	if r.EndTime.Before(r.StartTime) {
-		errors["end_time"] = "must be after start time"
+		errs["end_time"] = "must be after start time"
 	}
-	// Валидация координат (bounds check)
 	if r.Coordinates.Lat < -90 || r.Coordinates.Lat > 90 {
-		errors["coordinates"] = "invalid latitude"
+		errs["lat"] = "invalid latitude"
 	}
-	return errors
+	if r.Coordinates.Lng < -180 || r.Coordinates.Lng > 180 {
+		errs["lng"] = "invalid longitude"
+	}
+	return errs
+}
+
+func (r *UpdateMeetupRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	if r.Title != nil && len(*r.Title) < 3 {
+		errs["title"] = "must be at least 3 chars"
+	}
+	if r.StartTime != nil && r.EndTime != nil && r.EndTime.Before(*r.StartTime) {
+		errs["end_time"] = "must be after start time"
+	}
+	if r.Coordinates != nil {
+		if r.Coordinates.Lat < -90 || r.Coordinates.Lat > 90 {
+			errs["lat"] = "invalid latitude"
+		}
+		if r.Coordinates.Lng < -180 || r.Coordinates.Lng > 180 {
+			errs["lng"] = "invalid longitude"
+		}
+	}
+	return errs
 }
 
 type MeetupResponse struct {

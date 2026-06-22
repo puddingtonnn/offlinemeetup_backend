@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
@@ -88,6 +89,14 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor in
 }
 
 func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string) (*dto.MessageResponse, []int64, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, nil, fmt.Errorf("empty message: %w", ErrInvalidInput)
+	}
+	if len(content) > 4096 {
+		return nil, nil, fmt.Errorf("message too long: %w", ErrInvalidInput)
+	}
+
 	msg := &domain.Message{
 		ChatID:      chatID,
 		SenderID:    senderID,

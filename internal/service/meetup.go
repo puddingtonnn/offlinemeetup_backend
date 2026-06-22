@@ -309,6 +309,19 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 }
 
 func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64) error {
+	meetup, err := s.repo.GetByID(ctx, meetupID, userID)
+	if err != nil {
+		return err
+	}
+	if meetup == nil {
+		return ErrNotFound
+	}
+
+	// Организатор не может покинуть свой митап — только удалить его.
+	if meetup.CreatorID == userID {
+		return ErrOrganizerCannotLeave
+	}
+
 	if err := s.repo.Leave(ctx, meetupID, userID); err != nil {
 		return err
 	}

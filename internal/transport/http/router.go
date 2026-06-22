@@ -27,6 +27,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
+	router.Use(authMiddleware.BodyLimit(1 << 20)) // 1 MB на JSON-запросы
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

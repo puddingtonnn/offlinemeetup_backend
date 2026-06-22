@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-	"io"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
 const (
@@ -21,7 +22,7 @@ type GeoService struct {
 }
 
 func NewGeoService(apiKey string) *GeoService {
-	return &GeoService{apiKey: apiKey, client: &http.Client{}}
+	return &GeoService{apiKey: apiKey, client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (s *GeoService) SuggestAddress(query string) ([]dto.AddressSuggestion, error) {
@@ -60,10 +61,6 @@ func (s *GeoService) sendRequest(url string, bodyData interface{}) ([]dto.Addres
 		return nil, fmt.Errorf("dadata request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
-	bodyBytes, _ := io.ReadAll(resp.Body)
-
-	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("dadata returned status: %d", resp.StatusCode)

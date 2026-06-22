@@ -21,6 +21,17 @@ type S3PutObjectAPI interface {
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 }
 
+// allowedImageTypes — разрешённые MIME-типы для загрузки (аватары, обложки).
+var allowedImageTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+	"image/gif":  true,
+}
+
+// maxFileSize — максимальный размер файла (10 MB), согласован с лимитом тела в хендлере.
+const maxFileSize = 10 << 20
+
 type FileService struct {
 	repo     FileRepository
 	s3Client S3PutObjectAPI
@@ -36,6 +47,13 @@ func NewFileService(repo FileRepository, s3Client S3PutObjectAPI, cfg *config.Co
 }
 
 func (s *FileService) Upload(ctx context.Context, fileName string, contentType string, size int64, reader io.Reader) (*domain.File, error) {
+	if !allowedImageTypes[contentType] {
+		return nil, fmt.Errorf("unsupported file type %q: %w", contentType, ErrInvalidInput)
+	}
+	if size <= 0 || size > maxFileSize {
+		return nil, fmt.Errorf("file size out of range: %w", ErrInvalidInput)
+	}
+
 	fileID := uuid.New()
 	ext := filepath.Ext(fileName)
 	key := fmt.Sprintf("uploads/%s%s", fileID.String(), ext)
