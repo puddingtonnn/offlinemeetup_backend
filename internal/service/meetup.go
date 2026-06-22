@@ -206,7 +206,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		return nil, err
 	}
 	if existing == nil {
-		return nil, fmt.Errorf("getting meetup: %w", err)
+		return nil, fmt.Errorf("meetup %d: %w", meetupID, ErrNotFound)
 	}
 	if existing.CreatorID != userID {
 		return nil, ErrForbidden
@@ -264,7 +264,7 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 		return err
 	}
 	if existing == nil {
-		return fmt.Errorf("getting meetup: %w", err)
+		return fmt.Errorf("meetup %d: %w", meetupID, ErrNotFound)
 	}
 
 	if existing.CreatorID != userID {
@@ -283,8 +283,21 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 		return ErrNotFound
 	}
 
+	// В приватный митап можно вступить только по инвайт-токену.
+	if !meetup.IsPublic {
+		return ErrForbidden
+	}
+
+	if meetup.Status != "active" {
+		return ErrMeetupFinished
+	}
+
 	if time.Now().After(meetup.EndTime) {
 		return ErrMeetupFinished
+	}
+
+	if meetup.IsMember {
+		return ErrAlreadyExists
 	}
 
 	if err := s.repo.Join(ctx, meetupID, userID); err != nil {
@@ -318,8 +331,16 @@ func (s *MeetupService) JoinMeetupByToken(ctx context.Context, userID int64, tok
 		return ErrNotFound
 	}
 
+	if meetup.Status != "active" {
+		return ErrMeetupFinished
+	}
+
 	if time.Now().After(meetup.EndTime) {
 		return ErrMeetupFinished
+	}
+
+	if meetup.IsMember {
+		return ErrAlreadyExists
 	}
 
 	if err := s.repo.Join(ctx, meetup.ID, userID); err != nil {

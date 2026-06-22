@@ -148,6 +148,10 @@ func (h *Hub) trySend(client *Client, payload []byte) {
 	select {
 	case client.send <- payload:
 	default:
-		h.unregister <- client
+		// Буфер клиента переполнен — считаем его "зависшим" и отписываем.
+		// Запускаем в отдельной горутине: trySend вызывается из горутины Run
+		// (под broadcast), а h.unregister читает та же горутина — прямая
+		// запись сюда привела бы к deadlock'у всего хаба.
+		go func() { h.unregister <- client }()
 	}
 }

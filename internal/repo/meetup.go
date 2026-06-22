@@ -106,6 +106,9 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 
 	err := q.Scan(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -286,9 +289,22 @@ func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
 		Status:   "approved",
 	}
 
-	_, err = tx.NewInsert().Model(participant).Exec(ctx)
+	res, err := tx.NewInsert().
+		Model(participant).
+		On("CONFLICT (meetup_id, user_id) DO NOTHING").
+		Exec(ctx)
 	if err != nil {
 		return err
+	}
+
+	inserted, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	// Пользователь уже участник (в т.ч. при гонке двух одновременных join) —
+	// выходим без изменения счётчика и без добавления в чат.
+	if inserted == 0 {
+		return tx.Commit()
 	}
 
 	_, err = tx.NewUpdate().
