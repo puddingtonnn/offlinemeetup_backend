@@ -13,6 +13,20 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// ValidationErrorResponse возвращает 400 с детализацией по полям.
+type ValidationErrorResponse struct {
+	Error  string            `json:"error"`
+	Fields map[string]string `json:"fields"`
+}
+
+// RespondValidation отправляет 400 с картой ошибок по конкретным полям.
+func RespondValidation(w http.ResponseWriter, fields map[string]string) {
+	JSON(w, http.StatusBadRequest, ValidationErrorResponse{
+		Error:  "validation failed",
+		Fields: fields,
+	})
+}
+
 func JSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -38,6 +52,15 @@ func RespondError(w http.ResponseWriter, err error, log *slog.Logger) {
 	case errors.Is(err, service.ErrForbidden):
 		statusCode = http.StatusForbidden
 		msg = "Access denied"
+	case errors.Is(err, service.ErrMeetupFinished):
+		statusCode = http.StatusConflict
+		msg = "Meetup is finished or cancelled"
+	case errors.Is(err, service.ErrOrganizerCannotLeave):
+		statusCode = http.StatusConflict
+		msg = "Organizer cannot leave own meetup"
+	case errors.Is(err, service.ErrChatReadOnly):
+		statusCode = http.StatusConflict
+		msg = "Chat is read-only"
 	case errors.Is(err, service.ErrUnauthorized):
 		statusCode = http.StatusUnauthorized
 		msg = "Unauthorized"

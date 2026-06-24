@@ -2,24 +2,46 @@ package websocket
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 )
 
 type WSHandler struct {
-	hub            *Hub
-	log            *slog.Logger
-	chatService    *service.ChatService
-	profileService *service.ProfileService
+	hub             *Hub
+	log             *slog.Logger
+	chatService     *service.ChatService
+	profileService  *service.ProfileService
+	presenceService *service.PresenceService
+	upgrader        websocket.Upgrader
 }
 
-func NewWebSocketHandler(hub *Hub, log *slog.Logger, chatService *service.ChatService, profileService *service.ProfileService) *WSHandler {
-	return &WSHandler{hub: hub, log: log, chatService: chatService, profileService: profileService}
+func NewWebSocketHandler(hub *Hub, log *slog.Logger, chatService *service.ChatService, profileService *service.ProfileService, presenceService *service.PresenceService, allowedOrigins []string) *WSHandler {
+	return &WSHandler{
+		hub:             hub,
+		log:             log,
+		chatService:     chatService,
+		profileService:  profileService,
+		presenceService: presenceService,
+		upgrader:        newUpgrader(allowedOrigins),
+	}
+}
+
+// newConnID returns a random per-connection identifier. It must be unique across
+// a user's devices and across instances so presence accounting (a Redis set of
+// connection IDs) stays correct; crypto/rand gives that without an extra dep.
+func newConnID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // ServeWs
@@ -38,7 +60,7 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
@@ -56,11 +78,13 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 
 	client := &Client{
 		userID:      userID,
+		connID:      newConnID(),
 		nickname:    nickname,
 		hub:         h.hub,
 		conn:        conn,
 		send:        make(chan []byte, 256),
 		chatService: h.chatService,
+		presence:    h.presenceService,
 		log:         h.log,
 	}
 	client.hub.register <- client
@@ -75,7 +99,42 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("failed to get user chats for ws subscription", slog.Any("err", err))
 	}
 
+	// Регистрируем присутствие и шлём начальный снапшот до старта насосов: канал
+	// send буферизирован, поэтому снапшот дождётся writePump. Best-effort.
+	h.announcePresence(userID, client)
+
 	// Передаем контекст и функцию отмены в горутины
 	go client.writePump(ctx, cancel)
 	go client.readPump(ctx, cancel)
+}
+
+// announcePresence marks the user online, broadcasts userOnline to co-chat
+// members on the offline->online transition, and pushes the connecting client a
+// snapshot of its peers' presence. All best-effort: a presence failure must not
+// break the chat connection.
+func (h *WSHandler) announcePresence(userID int64, client *Client) {
+	if h.presenceService == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	online, recipients, err := h.presenceService.OnConnect(ctx, userID, client.connID)
+	if err != nil {
+		h.log.Error("presence: on connect", slog.Any("err", err))
+	} else if online && len(recipients) > 0 {
+		h.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOnline, userID, true, nil))
+	}
+
+	statuses, err := h.presenceService.SnapshotFor(ctx, userID)
+	if err != nil {
+		h.log.Error("presence: snapshot", slog.Any("err", err))
+		return
+	}
+	select {
+	case client.send <- presenceSnapshotEvent(statuses):
+	default:
+		// send buffer full at connect time is implausible; drop rather than block.
+	}
 }

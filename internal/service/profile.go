@@ -19,14 +19,22 @@ type UserTagUpdater interface {
 	GetTagsByUserID(ctx context.Context, userID int64) ([]domain.Tag, error)
 }
 
+// profileCache кеширует профили по userID и сбрасывает их при обновлении.
+// Объявлен у потребителя, удовлетворяется *cache.ProfileCache.
+type profileCache interface {
+	Profile(ctx context.Context, userID int64, load func() (*dto.ProfileResponse, error)) (*dto.ProfileResponse, error)
+	InvalidateProfile(ctx context.Context, userID int64) error
+}
+
 type ProfileService struct {
 	profileRepo ProfileRepository
 	userRepo    UserTagUpdater
+	cache       profileCache
 	s3PublicURL string
 }
 
-func NewProfileService(profileRepo ProfileRepository, userRepo UserTagUpdater, s3PublicURL string) *ProfileService {
-	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo, s3PublicURL: s3PublicURL}
+func NewProfileService(profileRepo ProfileRepository, userRepo UserTagUpdater, cache profileCache, s3PublicURL string) *ProfileService {
+	return &ProfileService{profileRepo: profileRepo, userRepo: userRepo, cache: cache, s3PublicURL: s3PublicURL}
 }
 
 func mapTagsToDTO(tags []domain.Tag) []dto.TagResponse {
@@ -44,33 +52,35 @@ func mapTagsToDTO(tags []domain.Tag) []dto.TagResponse {
 }
 
 func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.ProfileResponse, error) {
-	profile, err := s.profileRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if profile == nil {
-		return nil, fmt.Errorf("profile not found: %w", ErrNotFound)
-	}
+	return s.cache.Profile(ctx, userID, func() (*dto.ProfileResponse, error) {
+		profile, err := s.profileRepo.GetByUserID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if profile == nil {
+			return nil, fmt.Errorf("profile not found: %w", ErrNotFound)
+		}
 
-	tags, err := s.userRepo.GetTagsByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch tags: %w", err)
-	}
+		tags, err := s.userRepo.GetTagsByUserID(ctx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch tags: %w", err)
+		}
 
-	avatarURL := ""
-	if profile.AvatarFile != nil {
-		avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, profile.AvatarFile.Key)
-	}
+		avatarURL := ""
+		if profile.AvatarFile != nil {
+			avatarURL = fmt.Sprintf("%s/%s", s.s3PublicURL, profile.AvatarFile.Key)
+		}
 
-	return &dto.ProfileResponse{
-		ID:          profile.ID,
-		UserID:      profile.UserID,
-		Nickname:    profile.Nickname,
-		Bio:         profile.Bio,
-		AvatarURL:   avatarURL,
-		IsOrganizer: profile.IsOrganizer,
-		Tags:        mapTagsToDTO(tags),
-	}, nil
+		return &dto.ProfileResponse{
+			ID:          profile.ID,
+			UserID:      profile.UserID,
+			Nickname:    profile.Nickname,
+			Bio:         profile.Bio,
+			AvatarURL:   avatarURL,
+			IsOrganizer: profile.IsOrganizer,
+			Tags:        mapTagsToDTO(tags),
+		}, nil
+	})
 }
 
 func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dto.UpdateProfileRequest) (*dto.ProfileResponse, error) {
@@ -112,6 +122,9 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dt
 			return nil, fmt.Errorf("updating tags error: %w", err)
 		}
 	}
+
+	// Сбрасываем кеш ДО финального чтения, чтобы GetProfile перечитал свежие данные.
+	_ = s.cache.InvalidateProfile(ctx, userID) // best-effort; cache layer logs failures
 
 	return s.GetProfile(ctx, userID)
 }

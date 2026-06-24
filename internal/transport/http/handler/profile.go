@@ -102,6 +102,11 @@ func (h *ProfileHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
 	updatedProfileDTO, err := h.service.UpdateProfile(r.Context(), userID, req)
 	if err != nil {
 		response.RespondError(w, err, h.log)

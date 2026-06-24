@@ -2,8 +2,12 @@ package config
 
 import (
 	"fmt"
-	"github.com/joho/godotenv"
 	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -21,6 +25,35 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	S3PublicURL string
+
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+
+	CacheTimeout    time.Duration
+	CacheTTLChats   time.Duration
+	CacheTTLTags    time.Duration
+	CacheTTLProfile time.Duration
+	CacheTTLMeetup  time.Duration
+
+	// PresenceTTL — срок жизни ключа присутствия в Redis; обновляется heartbeat'ом
+	// из writePump. Должен быть заметно больше pingPeriod (~54s), чтобы один
+	// пропущенный heartbeat не выкинул юзера в offline, но достаточно мал, чтобы
+	// упавший инстанс быстро «отпустил» свои соединения.
+	PresenceTTL time.Duration
+
+	WSAllowedOrigins []string
+}
+
+// durEnv reads a duration from env (e.g. "200ms", "5m"); on an empty or
+// unparseable value it returns def.
+func durEnv(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
 }
 
 func Load() (*Config, error) {
@@ -41,6 +74,33 @@ func Load() (*Config, error) {
 		S3AccessKey: os.Getenv("S3_ACCESS_KEY"),
 		S3SecretKey: os.Getenv("S3_SECRET_KEY"),
 		S3PublicURL: os.Getenv("S3_PUBLIC_URL"),
+
+		RedisAddr:     os.Getenv("REDIS_ADDR"),
+		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+	}
+
+	if cfg.RedisAddr == "" {
+		cfg.RedisAddr = "meetuper_redis:6379"
+	}
+	if dbStr := os.Getenv("REDIS_DB"); dbStr != "" {
+		if n, err := strconv.Atoi(dbStr); err == nil {
+			cfg.RedisDB = n
+		}
+	}
+
+	cfg.CacheTimeout = durEnv("CACHE_TIMEOUT", 200*time.Millisecond)
+	cfg.CacheTTLChats = durEnv("CACHE_TTL_CHATS", 5*time.Minute)
+	cfg.CacheTTLTags = durEnv("CACHE_TTL_TAGS", time.Hour)
+	cfg.CacheTTLProfile = durEnv("CACHE_TTL_PROFILE", 10*time.Minute)
+	cfg.CacheTTLMeetup = durEnv("CACHE_TTL_MEETUP", 2*time.Minute)
+	cfg.PresenceTTL = durEnv("PRESENCE_TTL", 2*time.Minute)
+
+	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
+		for _, o := range strings.Split(origins, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, o)
+			}
+		}
 	}
 
 	if cfg.AppPort == "" {

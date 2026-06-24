@@ -47,6 +47,11 @@ func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
 	resp, err := h.service.CreateMeetup(r.Context(), userID, req)
 	if err != nil {
 		response.RespondError(w, err, h.log)
@@ -180,6 +185,11 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var req dto.UpdateMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
 		return
 	}
 

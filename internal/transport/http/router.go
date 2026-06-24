@@ -22,16 +22,21 @@ func NewRouter(authHandler *handler.AuthHandler,
 	chatHandler *handler.ChatHandler,
 	wsHandler *websocket.WSHandler,
 	fileHandler *handler.FileHandler,
+	statusChecker authMiddleware.UserStatusChecker,
+	metricsHandler http.Handler,
 	cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
+	router.Use(authMiddleware.BodyLimit(1 << 20)) // 1 MB на JSON-запросы
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
+	router.Handle("/metrics", metricsHandler)
 
 	if cfg.Env == "local" || cfg.Env == "dev" {
 		router.Post("/auth/dev/login", authHandler.DevLogin)
@@ -56,7 +61,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 			})
 
 			r.Group(func(r chi.Router) {
-				r.Use(authMiddleware.AuthMiddleware(cfg))
+				r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 				r.Post("/", meetupHandler.CreateMeetup)
 				r.Patch("/{id}", meetupHandler.Update)
@@ -69,7 +74,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 		})
 
 		r.Group(func(r chi.Router) {
-			r.Use(authMiddleware.AuthMiddleware(cfg))
+			r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 			r.Get("/auth/me", authHandler.Me)
 
@@ -84,15 +89,18 @@ func NewRouter(authHandler *handler.AuthHandler,
 		})
 
 		r.Route("/chats", func(r chi.Router) {
-			r.Use(authMiddleware.AuthMiddleware(cfg))
+			r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 			r.Get("/", chatHandler.GetUserChats)
 			r.Post("/{id}/messages", chatHandler.SendMessage)
 			r.Get("/{id}/messages", chatHandler.GetMessages)
+			r.Patch("/{id}/messages/{messageId}", chatHandler.EditMessage)
+			r.Delete("/{id}/messages/{messageId}", chatHandler.DeleteMessage)
+			r.Get("/{id}/presence", chatHandler.GetChatPresence)
 		})
 
 		r.Route("/ws", func(r chi.Router) {
-			r.Use(authMiddleware.AuthMiddleware(cfg))
+			r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 			r.Get("/", wsHandler.ServeWs)
 		})

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/api/idtoken"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -59,10 +60,22 @@ type TelegramAuthData struct {
 	Hash      string `json:"hash"`
 }
 
+// telegramAuthTTL — максимальный возраст данных авторизации Telegram.
+// Защищает от replay-атак повторно использованной login-ссылкой.
+const telegramAuthTTL = 24 * time.Hour
+
 func (s *AuthService) LoginTelegram(ctx context.Context, params url.Values) (string, error) {
 
 	if !s.validateTelegramHash(params) {
 		return "", errors.New("invalid telegram hash")
+	}
+
+	authDate, err := strconv.ParseInt(params.Get("auth_date"), 10, 64)
+	if err != nil {
+		return "", errors.New("invalid telegram auth_date")
+	}
+	if time.Since(time.Unix(authDate, 0)) > telegramAuthTTL {
+		return "", errors.New("telegram auth data expired")
 	}
 
 	socialID := params.Get("id")
@@ -138,6 +151,19 @@ func (s *AuthService) CreateDevToken(ctx context.Context, email string) (string,
 
 	token, err := s.findOrCreateUser(ctx, "dev_local", dummySocialID, email)
 	return token, err
+}
+
+// IsActive проверяет, что аккаунт существует и находится в статусе active.
+// Используется AuthMiddleware для немедленного отзыва доступа.
+func (s *AuthService) IsActive(ctx context.Context, userID int64) (bool, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, nil
+	}
+	return user.Status == domain.UserStatusActive, nil
 }
 
 func (s *AuthService) GetCurrentUser(ctx context.Context, userID int64) (*dto.UserResponse, error) {

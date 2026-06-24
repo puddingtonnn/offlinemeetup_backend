@@ -12,6 +12,10 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache/cachemetrics"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
@@ -31,17 +35,26 @@ type App struct {
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
-	hub := websocket.NewHub(log)
-
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "meetuper_redis:6379",
-		Password: "",
-		DB:       0,
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
 	})
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Error("failed to connect to redis", "err", err)
 	}
+
+	// WS broadcasts fan out across instances via Redis Pub/Sub; local delivery
+	// happens only in the consumer started in App.Run.
+	hub := websocket.NewHub(log, websocket.NewRedisBus(rdb))
+
+	metricsReg := prometheus.NewRegistry()
+	cacheMetrics := cachemetrics.New(metricsReg)
+	metricsHandler := promhttp.HandlerFor(metricsReg, promhttp.HandlerOpts{})
+
+	cached := cache.NewTimeoutCache(cache.NewRedisCache(rdb, log), cfg.CacheTimeout)
+	chatCache := cache.NewChatCache(cached, cacheMetrics, cfg.CacheTTLChats)
 
 	// AWS SDK v2 Config
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
@@ -63,17 +76,22 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
 	userRepo := repo.NewUserRepo(db)
 	profileRepo := repo.NewProfileRepo(db)
-	meetupRepo := repo.NewMeetupRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	chatRepo := repo.NewChatRepo(db)
+	meetupRepo := repo.NewMeetupRepo(db, chatRepo)
 	fileRepo := repo.NewFileRepo(db)
 
 	authService := service.NewAuthService(userRepo, cfg)
-	profileService := service.NewProfileService(profileRepo, userRepo, cfg.S3PublicURL)
-	meetupService := service.NewMeetupService(meetupRepo, rdb, cfg.S3PublicURL)
-	tagService := service.NewTagService(tagRepo)
+	profileCache := cache.NewProfileCache(cached, cacheMetrics, cfg.CacheTTLProfile)
+	profileService := service.NewProfileService(profileRepo, userRepo, profileCache, cfg.S3PublicURL)
+	meetupCache := cache.NewMeetupCache(cached, cacheMetrics, cfg.CacheTTLMeetup)
+	meetupService := service.NewMeetupService(meetupRepo, chatCache, meetupCache, cfg.S3PublicURL)
+	tagCache := cache.NewTagCache(cached, cacheMetrics, cfg.CacheTTLTags)
+	tagService := service.NewTagService(tagRepo, tagCache)
 	geoService := service.NewGeoService(cfg.DaDataToken)
-	chatService := service.NewChatService(chatRepo, rdb, log, cfg.S3PublicURL)
+	chatService := service.NewChatService(chatRepo, chatCache, cfg.S3PublicURL)
+	presenceStore := cache.NewRedisPresenceStore(rdb)
+	presenceService := service.NewPresenceService(presenceStore, chatService, cfg.PresenceTTL)
 	fileService := service.NewFileService(fileRepo, s3Client, cfg)
 
 	authHandler := handler.NewAuthHandler(authService, log)
@@ -81,11 +99,11 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	meetupHandler := handler.NewMeetupHandler(meetupService, log)
 	tagHandler := handler.NewTagHandler(tagService, log)
 	geoHandler := handler.NewGeoHandler(geoService)
-	chatHandler := handler.NewChatHandler(chatService, hub, log)
-	wsHandler := websocket.NewWebSocketHandler(hub, log, chatService, profileService)
+	chatHandler := handler.NewChatHandler(chatService, presenceService, hub, log)
+	wsHandler := websocket.NewWebSocketHandler(hub, log, chatService, profileService, presenceService, cfg.WSAllowedOrigins)
 	fileHandler := handler.NewFileHandler(fileService, log)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, authService, metricsHandler, cfg)
 
 	return &App{
 		cfg:    cfg,
@@ -98,6 +116,15 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
 func (a *App) Run(ctx context.Context) error {
 	go a.hub.Run(ctx)
+
+	// Subscribe this instance to the WS broadcast channel before serving so no
+	// early broadcast is missed. Local delivery happens ONLY through this
+	// consumer, so a failure here (Redis unreachable) means real-time WS delivery
+	// is down until Redis recovers — Redis is a hard dependency of the chat, same
+	// as it already is for caching. We log and keep serving REST regardless.
+	if err := a.hub.StartConsumer(ctx); err != nil {
+		a.log.Error("failed to start ws broadcast consumer", slog.Any("err", err))
+	}
 
 	server := &http.Server{
 		Addr:    ":" + a.cfg.AppPort,
