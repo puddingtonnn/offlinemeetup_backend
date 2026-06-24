@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-	"github.com/redis/go-redis/v9"
 )
 
 type MeetupRepository interface {
@@ -22,14 +21,44 @@ type MeetupRepository interface {
 	Leave(ctx context.Context, meetupID, userID int64) error
 }
 
+// chatCacheInvalidator drops a user's cached chat list. Joining, leaving or
+// creating a meetup changes which group chats a user belongs to, so the next
+// chat-list read for that user must not be served from a stale cache. Declared
+// here, at the consumer, and satisfied by *cache.ChatCache.
+type chatCacheInvalidator interface {
+	InvalidateUserChats(ctx context.Context, userID int64) error
+}
+
+// meetupCache кеширует инвариантный снапшот митапа и сбрасывает его при мутациях
+// тела/участников. Per-user IsMember накладывается внутри кеша. Объявлен здесь,
+// у потребителя, и удовлетворяется *cache.MeetupCache. load возвращает
+// инвариантный DTO (IsMember=false) и список user_id участников.
+type meetupCache interface {
+	Meetup(ctx context.Context, meetupID, userID int64, load func() (dto.MeetupResponse, []int64, error)) (*dto.MeetupResponse, error)
+	InvalidateMeetup(ctx context.Context, meetupID int64) error
+}
+
 type MeetupService struct {
 	repo        MeetupRepository
-	rdb         *redis.Client
+	chatCache   chatCacheInvalidator
+	meetupCache meetupCache
 	s3PublicURL string
 }
 
-func NewMeetupService(repo MeetupRepository, rdb *redis.Client, s3PublicURL string) *MeetupService {
-	return &MeetupService{repo: repo, rdb: rdb, s3PublicURL: s3PublicURL}
+func NewMeetupService(repo MeetupRepository, chatCache chatCacheInvalidator, meetupCache meetupCache, s3PublicURL string) *MeetupService {
+	return &MeetupService{repo: repo, chatCache: chatCache, meetupCache: meetupCache, s3PublicURL: s3PublicURL}
+}
+
+// memberIDs собирает user_id участников из доменной модели (не зависит от
+// наличия профиля), чтобы по нему вычислять IsMember для конкретного смотрящего.
+func memberIDs(m *domain.Meetup) []int64 {
+	ids := make([]int64, 0, len(m.Participants))
+	for _, u := range m.Participants {
+		if u != nil {
+			ids = append(ids, u.ID)
+		}
+	}
+	return ids
 }
 
 func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.CreateMeetupRequest) (*dto.MeetupResponse, error) {
@@ -63,7 +92,7 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 		return nil, err
 	}
 
-	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	_ = s.chatCache.InvalidateUserChats(ctx, userID) // best-effort; cache layer logs failures
 
 	return s.mapToResponse(created), nil
 }
@@ -73,20 +102,27 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 }
 
 func (s *MeetupService) GetMeetup(ctx context.Context, id int64, userID int64) (*dto.MeetupResponse, error) {
-	m, err := s.repo.GetByID(ctx, id, userID)
-
+	// Кешируем инвариантный снапшот (GetByID с currentUserID=0 => без is_member),
+	// per-user IsMember накладывает кеш-слой поверх копии.
+	resp, err := s.meetupCache.Meetup(ctx, id, userID, func() (dto.MeetupResponse, []int64, error) {
+		m, err := s.repo.GetByID(ctx, id, 0)
+		if err != nil {
+			return dto.MeetupResponse{}, nil, fmt.Errorf("getting meetup: %w", err)
+		}
+		if m == nil {
+			return dto.MeetupResponse{}, nil, fmt.Errorf("meetup %d: %w", id, ErrNotFound)
+		}
+		return *s.mapToResponse(m), memberIDs(m), nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("getting meetup: %w", err)
-	}
-	if m == nil {
-		return nil, fmt.Errorf("meetup %d: %w", id, ErrNotFound)
+		return nil, err
 	}
 
-	if !m.IsPublic && !m.IsMember && m.CreatorID != userID {
+	if !resp.IsPublic && !resp.IsMember && resp.CreatorID != userID {
 		return nil, ErrForbidden
 	}
 
-	return s.mapToResponse(m), nil
+	return resp, nil
 }
 
 func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dto.MeetupFilter) ([]*dto.MeetupResponse, error) {
@@ -164,6 +200,9 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 	if err := s.repo.Update(ctx, existing, tagIDs); err != nil {
 		return nil, err
 	}
+
+	_ = s.meetupCache.InvalidateMeetup(ctx, meetupID) // best-effort; cache layer logs failures
+
 	return s.mapToResponse(existing), nil
 }
 
@@ -180,7 +219,12 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 		return ErrForbidden
 	}
 
-	return s.repo.Delete(ctx, meetupID)
+	if err := s.repo.Delete(ctx, meetupID); err != nil {
+		return err
+	}
+
+	_ = s.meetupCache.InvalidateMeetup(ctx, meetupID) // best-effort; cache layer logs failures
+	return nil
 }
 
 func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) error {
@@ -213,7 +257,8 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 		return err
 	}
 
-	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	_ = s.chatCache.InvalidateUserChats(ctx, userID)  // best-effort; cache layer logs failures
+	_ = s.meetupCache.InvalidateMeetup(ctx, meetupID) // участники изменились — снапшот устарел
 	return nil
 }
 
@@ -235,7 +280,8 @@ func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64)
 		return err
 	}
 
-	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	_ = s.chatCache.InvalidateUserChats(ctx, userID)  // best-effort; cache layer logs failures
+	_ = s.meetupCache.InvalidateMeetup(ctx, meetupID) // участники изменились — снапшот устарел
 	return nil
 }
 
@@ -269,6 +315,7 @@ func (s *MeetupService) JoinMeetupByToken(ctx context.Context, userID int64, tok
 		return err
 	}
 
-	s.rdb.Del(ctx, fmt.Sprintf("user_chats:%d", userID))
+	_ = s.chatCache.InvalidateUserChats(ctx, userID)   // best-effort; cache layer logs failures
+	_ = s.meetupCache.InvalidateMeetup(ctx, meetup.ID) // участники изменились — снапшот устарел
 	return nil
 }

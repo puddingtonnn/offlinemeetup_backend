@@ -229,12 +229,12 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 		assert.ErrorIs(t, err, repoErr)
 		assert.Empty(t, token)
 	})
-	
+
 	t.Run("repo_error_create", func(t *testing.T) {
 		repo.EXPECT().
 			GetBySocialID(ctx, "dev_local", dummySocialID).
 			Return(nil, nil)
-			
+
 		repoErr := errors.New("create error")
 		repo.EXPECT().
 			CreateUserWithSocial(ctx, gomock.Any(), "dev_local", dummySocialID, gomock.Any()).

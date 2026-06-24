@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type Chat struct {
 	ID              int64     `bun:",pk,autoincrement"`
@@ -26,12 +30,18 @@ type ChatParticipant struct {
 }
 
 type Message struct {
-	ID          int64     `bun:",pk,autoincrement"`
-	ChatID      int64     `bun:"chat_id,notnull"`
-	SenderID    int64     `bun:"sender_id,notnull"`
-	Content     string    `bun:"content,notnull"`
-	MessageType string    `bun:"message_type,notnull,default:'text'"`
-	CreatedAt   time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	ID               int64         `bun:",pk,autoincrement"`
+	ChatID           int64         `bun:"chat_id,notnull"`
+	SenderID         int64         `bun:"sender_id,notnull"`
+	Content          string        `bun:"content,notnull"`
+	MessageType      string        `bun:"message_type,notnull,default:'text'"`
+	ReplyToMessageID *int64        `bun:"reply_to_message_id"`
+	FileID           uuid.NullUUID `bun:"file_id,type:uuid"`
+	EditedAt         *time.Time    `bun:"edited_at"`
+	DeletedAt        *time.Time    `bun:"deleted_at"`
+	CreatedAt        time.Time     `bun:",nullzero,notnull,default:current_timestamp"`
 
-	Sender *User `bun:"rel:belongs-to,join:sender_id=id"`
+	Sender  *User    `bun:"rel:belongs-to,join:sender_id=id"`
+	ReplyTo *Message `bun:"rel:belongs-to,join:reply_to_message_id=id"`
+	File    *File    `bun:"rel:belongs-to,join:file_id=id"`
 }

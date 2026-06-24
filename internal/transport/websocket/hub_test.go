@@ -13,9 +13,11 @@ import (
 
 func testHub(t *testing.T) (*Hub, context.CancelFunc) {
 	t.Helper()
-	hub := NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	hub := NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), NewLocalBus())
 	ctx, cancel := context.WithCancel(context.Background())
 	go hub.Run(ctx)
+	// Local delivery now flows bus -> consumer -> Run, so the consumer must run.
+	require.NoError(t, hub.StartConsumer(ctx))
 	return hub, cancel
 }
 
@@ -43,11 +45,13 @@ func TestHub_RegisterAndBroadcastToUser(t *testing.T) {
 	client := &Client{userID: 1, hub: hub, send: make(chan []byte, 4)}
 	hub.register <- client
 
-	hub.BroadcastToUsers([]int64{1}, []byte("hello"))
+	// Payloads cross the bus as JSON (envelope.Payload is json.RawMessage), so a
+	// test payload must itself be valid JSON.
+	hub.BroadcastToUsers([]int64{1}, []byte(`{"v":"hello"}`))
 
 	msg, ok := recvWithTimeout(t, client.send, time.Second)
 	require.True(t, ok)
-	assert.Equal(t, "hello", string(msg))
+	assert.JSONEq(t, `{"v":"hello"}`, string(msg))
 }
 
 func TestHub_Unregister(t *testing.T) {
@@ -77,12 +81,12 @@ func TestHub_BroadcastToRoomsExcludesSender(t *testing.T) {
 	hub.Subscribe(sender, roomID)
 	hub.Subscribe(other, roomID)
 
-	hub.BroadcastToRooms(roomID, []byte("typing"), sender)
+	hub.BroadcastToRooms(roomID, []byte(`{"v":"typing"}`), sender.userID)
 
 	// Получатель видит сообщение...
 	msg, ok := recvWithTimeout(t, other.send, time.Second)
 	require.True(t, ok)
-	assert.Equal(t, "typing", string(msg))
+	assert.JSONEq(t, `{"v":"typing"}`, string(msg))
 
 	// ...а отправитель — нет.
 	_, ok = recvWithTimeout(t, sender.send, 100*time.Millisecond)
@@ -106,13 +110,13 @@ func TestHub_BroadcastDoesNotDeadlockOnFullBuffer(t *testing.T) {
 	hub.register <- slow
 	hub.register <- healthy
 
-	hub.BroadcastToUsers([]int64{1, 2}, []byte("hello"))
+	hub.BroadcastToUsers([]int64{1, 2}, []byte(`{"v":"hello"}`))
 
 	// Здоровый клиент должен получить сообщение, несмотря на зависшего:
 	// если бы Run заблокировался на slow, доставки бы не было.
 	msg, ok := recvWithTimeout(t, healthy.send, 2*time.Second)
 	require.True(t, ok, "healthy client did not receive — hub likely deadlocked")
-	assert.Equal(t, "hello", string(msg))
+	assert.JSONEq(t, `{"v":"hello"}`, string(msg))
 
 	// Зависший клиент должен быть автоматически отписан.
 	require.Eventually(t, func() bool { return !hub.hasUser(1) }, 2*time.Second, 10*time.Millisecond)

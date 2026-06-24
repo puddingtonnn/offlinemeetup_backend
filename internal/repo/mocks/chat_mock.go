@@ -70,6 +70,38 @@ func (mr *MockChatRepositoryMockRecorder) CreateGroupChat(ctx, tx, chat any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGroupChat", reflect.TypeOf((*MockChatRepository)(nil).CreateGroupChat), ctx, tx, chat)
 }
 
+// DeleteMessage mocks base method.
+func (m *MockChatRepository) DeleteMessage(ctx context.Context, msgID, editorID int64) (int64, []int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteMessage", ctx, msgID, editorID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].([]int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// DeleteMessage indicates an expected call of DeleteMessage.
+func (mr *MockChatRepositoryMockRecorder) DeleteMessage(ctx, msgID, editorID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMessage", reflect.TypeOf((*MockChatRepository)(nil).DeleteMessage), ctx, msgID, editorID)
+}
+
+// EditMessage mocks base method.
+func (m *MockChatRepository) EditMessage(ctx context.Context, msgID, editorID int64, content string) (*domain.Message, []int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EditMessage", ctx, msgID, editorID, content)
+	ret0, _ := ret[0].(*domain.Message)
+	ret1, _ := ret[1].([]int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// EditMessage indicates an expected call of EditMessage.
+func (mr *MockChatRepositoryMockRecorder) EditMessage(ctx, msgID, editorID, content any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EditMessage", reflect.TypeOf((*MockChatRepository)(nil).EditMessage), ctx, msgID, editorID, content)
+}
+
 // GetChatByMeetupID mocks base method.
 func (m *MockChatRepository) GetChatByMeetupID(ctx context.Context, tx bun.IDB, meetupID int64) (*domain.Chat, error) {
 	m.ctrl.T.Helper()
@@ -98,6 +130,21 @@ func (m *MockChatRepository) GetChatParticipantIDs(ctx context.Context, chatID i
 func (mr *MockChatRepositoryMockRecorder) GetChatParticipantIDs(ctx, chatID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChatParticipantIDs", reflect.TypeOf((*MockChatRepository)(nil).GetChatParticipantIDs), ctx, chatID)
+}
+
+// GetCoChatUserIDs mocks base method.
+func (m *MockChatRepository) GetCoChatUserIDs(ctx context.Context, userID int64) ([]int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCoChatUserIDs", ctx, userID)
+	ret0, _ := ret[0].([]int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCoChatUserIDs indicates an expected call of GetCoChatUserIDs.
+func (mr *MockChatRepositoryMockRecorder) GetCoChatUserIDs(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCoChatUserIDs", reflect.TypeOf((*MockChatRepository)(nil).GetCoChatUserIDs), ctx, userID)
 }
 
 // GetMessages mocks base method.

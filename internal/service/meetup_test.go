@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo/mocks"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
@@ -26,7 +28,10 @@ func setupMeetupTest(t *testing.T) (*miniredis.Miniredis, *redis.Client, *mocks.
 	mockRepo := mocks.NewMockMeetupRepository(ctrl)
 
 	s3URL := "http://s3.example.com"
-	svc := NewMeetupService(mockRepo, rdb, s3URL)
+	rc := cache.NewRedisCache(rdb, slog.New(slog.DiscardHandler))
+	chatCache := cache.NewChatCache(rc, cache.NopMetrics, time.Minute)
+	meetupCache := cache.NewMeetupCache(rc, cache.NopMetrics, time.Minute)
+	svc := NewMeetupService(mockRepo, chatCache, meetupCache, s3URL)
 
 	return mr, rdb, mockRepo, svc
 }
@@ -67,21 +72,19 @@ func TestMeetupService_CreateMeetup(t *testing.T) {
 }
 
 func TestMeetupService_GetMeetup(t *testing.T) {
-	mr, _, mockRepo, svc := setupMeetupTest(t)
-	defer mr.Close()
-
 	ctx := context.Background()
 	meetupID := int64(100)
 	userID := int64(1)
 
+	// Инвариантный снапшот грузится с currentUserID=0 (без per-user is_member).
+
 	t.Run("success_public", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
 		mockRepo.EXPECT().
-			GetByID(ctx, meetupID, userID).
-			Return(&domain.Meetup{
-				ID:       meetupID,
-				Title:    "Test Meetup",
-				IsPublic: true,
-			}, nil)
+			GetByID(ctx, meetupID, int64(0)).
+			Return(&domain.Meetup{ID: meetupID, Title: "Test Meetup", IsPublic: true}, nil)
 
 		resp, err := svc.GetMeetup(ctx, meetupID, userID)
 		require.NoError(t, err)
@@ -89,15 +92,12 @@ func TestMeetupService_GetMeetup(t *testing.T) {
 	})
 
 	t.Run("forbidden_private", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
 		mockRepo.EXPECT().
-			GetByID(ctx, meetupID, userID).
-			Return(&domain.Meetup{
-				ID:        meetupID,
-				Title:     "Private Meetup",
-				IsPublic:  false,
-				IsMember:  false,
-				CreatorID: 2,
-			}, nil)
+			GetByID(ctx, meetupID, int64(0)).
+			Return(&domain.Meetup{ID: meetupID, Title: "Private Meetup", IsPublic: false, CreatorID: 2}, nil)
 
 		resp, err := svc.GetMeetup(ctx, meetupID, userID)
 		require.Error(t, err)
@@ -106,13 +106,82 @@ func TestMeetupService_GetMeetup(t *testing.T) {
 	})
 
 	t.Run("not_found", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
 		mockRepo.EXPECT().
-			GetByID(ctx, meetupID, userID).
+			GetByID(ctx, meetupID, int64(0)).
 			Return(nil, nil)
 
 		resp, err := svc.GetMeetup(ctx, meetupID, userID)
 		require.ErrorIs(t, err, ErrNotFound)
 		assert.Nil(t, resp)
+	})
+
+	t.Run("second read served from cache", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
+		mockRepo.EXPECT().
+			GetByID(ctx, meetupID, int64(0)).
+			Return(&domain.Meetup{ID: meetupID, IsPublic: true}, nil).
+			Times(1)
+
+		_, err := svc.GetMeetup(ctx, meetupID, userID)
+		require.NoError(t, err)
+		assert.True(t, mr.Exists(cache.MeetupKey(meetupID)))
+
+		_, err = svc.GetMeetup(ctx, meetupID, userID)
+		require.NoError(t, err)
+	})
+
+	// Ключевой тест безопасности: один общий снапшот, корректный per-user
+	// IsMember и authz приватного митапа для разных смотрящих.
+	t.Run("private cross-user IsMember from one cached snapshot", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
+		private := &domain.Meetup{
+			ID:           meetupID,
+			IsPublic:     false,
+			CreatorID:    99,
+			Participants: []*domain.User{{ID: 1}, {ID: 2}},
+		}
+		// GetByID грузится РОВНО один раз — снапшот общий для всех.
+		mockRepo.EXPECT().GetByID(ctx, meetupID, int64(0)).Return(private, nil).Times(1)
+
+		// Член u1 — доступ есть, IsMember=true.
+		respMember, err := svc.GetMeetup(ctx, meetupID, 1)
+		require.NoError(t, err)
+		assert.True(t, respMember.IsMember)
+
+		// Не-член u3 — Forbidden, обслуживается из ТОГО ЖЕ кеша.
+		respOutsider, err := svc.GetMeetup(ctx, meetupID, 3)
+		require.ErrorIs(t, err, ErrForbidden)
+		assert.Nil(t, respOutsider)
+
+		// В кеше — инвариантный снапшот с is_member:false.
+		raw, getErr := mr.Get(cache.MeetupKey(meetupID))
+		require.NoError(t, getErr)
+		assert.Contains(t, raw, `"is_member":false`)
+	})
+
+	t.Run("join invalidates cached snapshot", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
+		mockRepo.EXPECT().GetByID(ctx, meetupID, int64(0)).Return(&domain.Meetup{ID: meetupID, IsPublic: true}, nil)
+		_, err := svc.GetMeetup(ctx, meetupID, userID)
+		require.NoError(t, err)
+		require.True(t, mr.Exists(cache.MeetupKey(meetupID)))
+
+		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(&domain.Meetup{
+			ID: meetupID, IsPublic: true, Status: "active", EndTime: time.Now().Add(time.Hour),
+		}, nil)
+		mockRepo.EXPECT().Join(ctx, meetupID, userID).Return(nil)
+
+		require.NoError(t, svc.JoinMeetup(ctx, userID, meetupID))
+		assert.False(t, mr.Exists(cache.MeetupKey(meetupID)), "join должен сбросить снапшот митапа")
 	})
 }
 

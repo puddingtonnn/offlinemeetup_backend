@@ -53,11 +53,13 @@ func newUpgrader(allowedOrigins []string) websocket.Upgrader {
 
 type Client struct {
 	userID      int64
+	connID      string
 	nickname    string
 	hub         *Hub
 	conn        *websocket.Conn
 	send        chan []byte
 	chatService *service.ChatService
+	presence    *service.PresenceService
 	log         *slog.Logger
 	rooms       []int64
 }
@@ -67,6 +69,7 @@ func (c *Client) readPump(ctx context.Context, cancel context.CancelFunc) {
 		cancel()
 		c.hub.unregister <- c
 		c.conn.Close()
+		c.markOffline()
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
@@ -109,10 +112,10 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
-			resp, targetIDs, err := c.chatService.SendMessage(timeoutCtx, req.ChatID, c.userID, req.Content)
+			resp, targetIDs, err := c.chatService.SendMessage(timeoutCtx, req.ChatID, c.userID, req.Content, req.ReplyToMessageID, req.FileID)
 			if err != nil {
 				c.log.Error("failed to send message via WS", slog.Any("err", err))
-				c.sendError(ctx, event.RequestID, "failed to send message")
+				c.sendError(ctx, event.RequestID, wsErrorMessage(err))
 				return
 			}
 
@@ -150,7 +153,7 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 		}
 
 		finalData, _ := json.Marshal(responseEvent)
-		c.hub.BroadcastToRooms(req.ChatID, finalData, c)
+		c.hub.BroadcastToRooms(req.ChatID, finalData, c.userID)
 
 	case EventMessagesRead:
 		var req WSMessagesReadPayload
@@ -183,6 +186,46 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 	default:
 		c.log.Warn("unknown WS event type", slog.String("type", event.Type))
 		c.sendError(ctx, event.RequestID, "unknown event type")
+	}
+}
+
+// markOffline reports the lost connection to presence and, if it was the user's
+// last connection anywhere, broadcasts userOffline. Idempotent per connID, so a
+// backpressure-drop and the readPump exit can both run without double-firing. It
+// uses a fresh context: the connection ctx is already cancelled when this runs,
+// which would otherwise abort the SREM/last_seen writes.
+func (c *Client) markOffline() {
+	if c.presence == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	offline, lastSeen, recipients, err := c.presence.OnDisconnect(ctx, c.userID, c.connID)
+	if err != nil {
+		c.log.Error("presence: on disconnect", slog.Any("err", err))
+		return
+	}
+	if offline && len(recipients) > 0 {
+		ls := lastSeen.Unix()
+		c.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOffline, c.userID, false, &ls))
+	}
+}
+
+// wsErrorMessage turns a service error into a short, client-facing reason so
+// the WS peer can tell apart "not a member" / "read-only" / "bad input" from a
+// generic failure, mirroring the HTTP status mapping in response.RespondError.
+func wsErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, service.ErrForbidden):
+		return "you are not a member of this chat"
+	case errors.Is(err, service.ErrChatReadOnly):
+		return "chat is read-only"
+	case errors.Is(err, service.ErrInvalidInput):
+		return "invalid message"
+	default:
+		return "failed to send message"
 	}
 }
 
@@ -228,6 +271,18 @@ func (c *Client) writePump(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		case <-ticker.C:
+			// Refresh presence TTL on the same tick as the WS ping so a live
+			// connection never decays to offline. Best-effort, off the write path.
+			if c.presence != nil {
+				go func() {
+					hbCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if err := c.presence.Heartbeat(hbCtx, c.userID); err != nil {
+						c.log.Error("presence: heartbeat", slog.Any("err", err))
+					}
+				}()
+			}
+
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return

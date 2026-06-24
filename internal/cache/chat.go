@@ -7,23 +7,22 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
-// userChatsTTL — сколько живёт кешированный список чатов пользователя.
-const userChatsTTL = 5 * time.Minute
-
-// ChatCache кеширует списки чатов по пользователям. Владеет форматом ключа и TTL,
-// поэтому вызывающему не нужно знать детали кеширования.
+// ChatCache кеширует списки чатов по пользователям. Владеет ключом, TTL и
+// метриками, поэтому вызывающему не нужно знать детали кеширования.
 type ChatCache struct {
-	cache Cache
+	cache   Cache
+	metrics Metrics
+	ttl     time.Duration
 }
 
 // NewChatCache создаёт ChatCache поверх любого Cache.
-func NewChatCache(c Cache) *ChatCache {
-	return &ChatCache{cache: c}
+func NewChatCache(c Cache, m Metrics, ttl time.Duration) *ChatCache {
+	return &ChatCache{cache: c, metrics: m, ttl: ttl}
 }
 
 // UserChats возвращает кешированный список чатов userID или вызывает load при промахе.
 func (c *ChatCache) UserChats(ctx context.Context, userID int64, load func() ([]dto.ChatResponse, error)) ([]dto.ChatResponse, error) {
-	return Load(ctx, c.cache, UserChatsKey(userID), userChatsTTL, load)
+	return Load(ctx, c.cache, c.metrics, "chats", UserChatsKey(userID), c.ttl, load)
 }
 
 // InvalidateUserChats сбрасывает кеш списка чатов userID.

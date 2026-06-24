@@ -9,10 +9,23 @@ definitions:
       value:
         type: string
     type: object
+  dto.AttachmentResponse:
+    properties:
+      file_name:
+        type: string
+      mime_type:
+        type: string
+      size:
+        type: integer
+      url:
+        type: string
+    type: object
   dto.ChatResponse:
     properties:
       id:
         type: integer
+      is_read_only:
+        type: boolean
       last_message_text:
         type: string
       meetup:
@@ -92,6 +105,8 @@ definitions:
         type: integer
       start_time:
         type: string
+      status:
+        type: string
       tags:
         items:
           $ref: '#/definitions/dto.TagResponse'
@@ -99,21 +114,51 @@ definitions:
       title:
         type: string
     type: object
+  dto.MessagePreview:
+    properties:
+      content:
+        type: string
+      id:
+        type: integer
+      is_deleted:
+        type: boolean
+      sender_id:
+        type: integer
+      sender_nickname:
+        type: string
+    type: object
   dto.MessageResponse:
     properties:
+      attachment:
+        $ref: '#/definitions/dto.AttachmentResponse'
       chat_id:
         type: integer
       content:
         type: string
       created_at:
         type: string
+      edited_at:
+        type: string
       id:
         type: integer
+      is_deleted:
+        type: boolean
       message_type:
         type: string
+      reply_to:
+        $ref: '#/definitions/dto.MessagePreview'
       sender:
         $ref: '#/definitions/dto.ProfileResponse'
       sender_id:
+        type: integer
+    type: object
+  dto.PresenceResponse:
+    properties:
+      last_seen:
+        type: integer
+      online:
+        type: boolean
+      user_id:
         type: integer
     type: object
   dto.ProfileResponse:
@@ -178,11 +223,23 @@ definitions:
           type: integer
         type: array
     type: object
+  handler.EditMessageRequest:
+    properties:
+      content:
+        example: Исправленный текст
+        type: string
+    type: object
   handler.SendMessageRequest:
     properties:
       content:
         example: Привет, как дела?
         type: string
+      file_id:
+        example: 6f5e4d3c-2b1a-...
+        type: string
+      reply_to_message_id:
+        example: 42
+        type: integer
     type: object
   handler.googleLoginRequest:
     properties:
@@ -384,6 +441,133 @@ paths:
       security:
       - BearerAuth: []
       summary: Отправка сообщения
+      tags:
+      - Chats
+  /v1/chats/{id}/messages/{messageId}:
+    delete:
+      description: Удаляет своё сообщение (мягкое удаление). Удалять может только
+        автор. Удаление рассылается участникам чата через WebSocket.
+      parameters:
+      - description: ID чата
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID сообщения
+        in: path
+        name: messageId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Удалено
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Не автор сообщения
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Сообщение не найдено
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Удаление сообщения
+      tags:
+      - Chats
+    patch:
+      consumes:
+      - application/json
+      description: Меняет текст своего сообщения. Редактировать может только автор.
+        Изменение рассылается участникам чата через WebSocket.
+      parameters:
+      - description: ID чата
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID сообщения
+        in: path
+        name: messageId
+        required: true
+        type: integer
+      - description: Новый текст
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.EditMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Неверный запрос
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Не автор сообщения
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Сообщение не найдено
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Редактирование сообщения
+      tags:
+      - Chats
+  /v1/chats/{id}/presence:
+    get:
+      description: Возвращает онлайн-статус и время последнего визита для всех участников
+        чата. Вызывающий должен быть участником.
+      parameters:
+      - description: ID чата
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.PresenceResponse'
+            type: array
+        "400":
+          description: Неверный ID чата
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Не авторизован
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Нет доступа к чату
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Присутствие участников чата
       tags:
       - Chats
   /v1/files/upload:

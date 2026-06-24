@@ -3,13 +3,29 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
+	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
+
+// newProfileCache собирает ProfileCache со свежим miniredis на каждый тест.
+func newProfileCache(t *testing.T) (*miniredis.Miniredis, *cache.ProfileCache) {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	pc := cache.NewProfileCache(cache.NewRedisCache(rdb, slog.New(slog.DiscardHandler)), cache.NopMetrics, time.Minute)
+	return mr, pc
+}
 
 // --- 1. Создаем моки для интерфейсов ---
 
@@ -115,7 +131,8 @@ func TestProfileService_GetProfile(t *testing.T) {
 			tt.mockSetup(mockProfileRepo, mockTagRepo)
 
 			// Создаем сервис, передавая ему наши моки вместо реальной базы!
-			service := NewProfileService(mockProfileRepo, mockTagRepo, "https://s3.local")
+			_, pc := newProfileCache(t)
+			service := NewProfileService(mockProfileRepo, mockTagRepo, pc, "https://s3.local")
 
 			// Вызываем тестируемый метод (Act)
 			result, err := service.GetProfile(context.Background(), testUserID)
@@ -156,7 +173,8 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 		tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).
 			Return([]domain.Tag{{ID: 1, Name: "Go"}}, nil)
 
-		svc := NewProfileService(repo, tagRepo, "https://s3.local")
+		_, pc := newProfileCache(t)
+		svc := NewProfileService(repo, tagRepo, pc, "https://s3.local")
 
 		newNick := "new"
 		resp, err := svc.UpdateProfile(context.Background(), testUserID, dto.UpdateProfileRequest{
@@ -181,7 +199,8 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 		tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).
 			Return([]domain.Tag{}, nil)
 
-		svc := NewProfileService(repo, tagRepo, "https://s3.local")
+		_, pc := newProfileCache(t)
+		svc := NewProfileService(repo, tagRepo, pc, "https://s3.local")
 
 		newBio := "hello"
 		_, err := svc.UpdateProfile(context.Background(), testUserID, dto.UpdateProfileRequest{
@@ -191,4 +210,37 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 		assert.NoError(t, err)
 		tagRepo.AssertNotCalled(t, "UpdateTags", mock.Anything, mock.Anything, mock.Anything)
 	})
+}
+
+func TestProfileService_CacheHitAndInvalidate(t *testing.T) {
+	ctx := context.Background()
+	testUserID := int64(7)
+
+	repo := new(MockProfileRepo)
+	tagRepo := new(MockUserTagUpdater)
+	mr, pc := newProfileCache(t)
+
+	existing := &domain.Profile{ID: 200, UserID: testUserID, Nickname: "neo"}
+	repo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
+	tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).Return([]domain.Tag{}, nil)
+
+	svc := NewProfileService(repo, tagRepo, pc, "https://s3.local")
+
+	// Первое чтение — промах: грузит из репо и кеширует.
+	_, err := svc.GetProfile(ctx, testUserID)
+	require.NoError(t, err)
+	assert.True(t, mr.Exists(cache.ProfileKey(testUserID)))
+
+	// Второе чтение — из кеша: репозиторий не дёргается повторно.
+	_, err = svc.GetProfile(ctx, testUserID)
+	require.NoError(t, err)
+	repo.AssertNumberOfCalls(t, "GetByUserID", 1)
+
+	// Обновление сбрасывает кеш, финальный GetProfile перечитывает из репо.
+	repo.On("UpdateProfile", mock.Anything, mock.Anything).Return(existing, nil)
+	newNick := "trinity"
+	_, err = svc.UpdateProfile(ctx, testUserID, dto.UpdateProfileRequest{Nickname: &newNick})
+	require.NoError(t, err)
+	// 1 (первое чтение) + 1 (внутри UpdateProfile) + 1 (финальный GetProfile после инвалидации).
+	repo.AssertNumberOfCalls(t, "GetByUserID", 3)
 }

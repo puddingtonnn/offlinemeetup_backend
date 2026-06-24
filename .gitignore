@@ -28,8 +28,16 @@ go.work.sum
 .env
 
 # Editor/IDE
- .idea/
- .vscode/
+.idea/
+.vscode/
+.gemini/
+
+# OS / build artifacts
+.DS_Store
+/bin/
+/main
 
 .data/
 logs/
+# Private product roadmap — not for public repo
+docs/ROADMAP.md

@@ -294,6 +294,198 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/chats/{id}/messages/{messageId}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Удаляет своё сообщение (мягкое удаление). Удалять может только автор. Удаление рассылается участникам чата через WebSocket.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chats"
+                ],
+                "summary": "Удаление сообщения",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID чата",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID сообщения",
+                        "name": "messageId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Удалено"
+                    },
+                    "401": {
+                        "description": "Не авторизован",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Не автор сообщения",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Сообщение не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Меняет текст своего сообщения. Редактировать может только автор. Изменение рассылается участникам чата через WebSocket.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chats"
+                ],
+                "summary": "Редактирование сообщения",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID чата",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID сообщения",
+                        "name": "messageId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Новый текст",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.EditMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный запрос",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Не авторизован",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Не автор сообщения",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Сообщение не найдено",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/chats/{id}/presence": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает онлайн-статус и время последнего визита для всех участников чата. Вызывающий должен быть участником.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chats"
+                ],
+                "summary": "Присутствие участников чата",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID чата",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.PresenceResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный ID чата",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Не авторизован",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет доступа к чату",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/files/upload": {
             "post": {
                 "security": [
@@ -1102,11 +1294,31 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AttachmentResponse": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ChatResponse": {
             "type": "object",
             "properties": {
                 "id": {
                     "type": "integer"
+                },
+                "is_read_only": {
+                    "type": "boolean"
                 },
                 "last_message_text": {
                     "type": "string"
@@ -1230,6 +1442,9 @@ const docTemplate = `{
                 "start_time": {
                     "type": "string"
                 },
+                "status": {
+                    "type": "string"
+                },
                 "tags": {
                     "type": "array",
                     "items": {
@@ -1241,9 +1456,32 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.MessagePreview": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_deleted": {
+                    "type": "boolean"
+                },
+                "sender_id": {
+                    "type": "integer"
+                },
+                "sender_nickname": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.MessageResponse": {
             "type": "object",
             "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/dto.AttachmentResponse"
+                },
                 "chat_id": {
                     "type": "integer"
                 },
@@ -1253,16 +1491,39 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "edited_at": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
                 },
+                "is_deleted": {
+                    "type": "boolean"
+                },
                 "message_type": {
                     "type": "string"
+                },
+                "reply_to": {
+                    "$ref": "#/definitions/dto.MessagePreview"
                 },
                 "sender": {
                     "$ref": "#/definitions/dto.ProfileResponse"
                 },
                 "sender_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.PresenceResponse": {
+            "type": "object",
+            "properties": {
+                "last_seen": {
+                    "type": "integer"
+                },
+                "online": {
+                    "type": "boolean"
+                },
+                "user_id": {
                     "type": "integer"
                 }
             }
@@ -1362,12 +1623,29 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.EditMessageRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "example": "Исправленный текст"
+                }
+            }
+        },
         "handler.SendMessageRequest": {
             "type": "object",
             "properties": {
                 "content": {
                     "type": "string",
                     "example": "Привет, как дела?"
+                },
+                "file_id": {
+                    "type": "string",
+                    "example": "6f5e4d3c-2b1a-..."
+                },
+                "reply_to_message_id": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },

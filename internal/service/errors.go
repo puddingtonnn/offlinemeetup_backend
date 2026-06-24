@@ -13,4 +13,5 @@ var (
 	ErrInternal             = errors.New("internal error")
 	ErrMeetupFinished       = errors.New("meetup already finished")
 	ErrOrganizerCannotLeave = errors.New("organizer cannot leave own meetup")
+	ErrChatReadOnly         = errors.New("chat is read-only")
 )

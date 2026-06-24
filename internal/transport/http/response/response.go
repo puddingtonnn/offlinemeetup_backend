@@ -58,6 +58,9 @@ func RespondError(w http.ResponseWriter, err error, log *slog.Logger) {
 	case errors.Is(err, service.ErrOrganizerCannotLeave):
 		statusCode = http.StatusConflict
 		msg = "Organizer cannot leave own meetup"
+	case errors.Is(err, service.ErrChatReadOnly):
+		statusCode = http.StatusConflict
+		msg = "Chat is read-only"
 	case errors.Is(err, service.ErrUnauthorized):
 		statusCode = http.StatusUnauthorized
 		msg = "Unauthorized"

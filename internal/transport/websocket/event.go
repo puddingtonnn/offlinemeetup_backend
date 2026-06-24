@@ -5,11 +5,15 @@ import (
 )
 
 const (
-	EventNewMessage   = "newMessage"
-	EventUserTyping   = "userTyping"
-	EventError        = "error"
-	EventMessagesRead = "messagesRead"
-	EventUserOnline   = "userOnline"
+	EventNewMessage       = "newMessage"
+	EventMessageEdited    = "messageEdited"
+	EventMessageDeleted   = "messageDeleted"
+	EventUserTyping       = "userTyping"
+	EventError            = "error"
+	EventMessagesRead     = "messagesRead"
+	EventUserOnline       = "userOnline"
+	EventUserOffline      = "userOffline"
+	EventPresenceSnapshot = "presenceSnapshot"
 )
 
 type WSEvent struct {
@@ -19,8 +23,16 @@ type WSEvent struct {
 }
 
 type WSSendMessagePayload struct {
-	ChatID  int64  `json:"chat_id"`
-	Content string `json:"content"`
+	ChatID           int64   `json:"chat_id"`
+	Content          string  `json:"content"`
+	ReplyToMessageID *int64  `json:"reply_to_message_id,omitempty"`
+	FileID           *string `json:"file_id,omitempty"`
+}
+
+// WSMessageDeletedPayload is broadcast when a message is soft-deleted.
+type WSMessageDeletedPayload struct {
+	ChatID    int64 `json:"chat_id"`
+	MessageID int64 `json:"message_id"`
 }
 
 type WSTypingPayload struct {
@@ -32,4 +44,18 @@ type WSTypingPayload struct {
 type WSMessagesReadPayload struct {
 	ChatID            int64 `json:"chat_id"`
 	LastReadMessageID int64 `json:"last_read_message_id"`
+}
+
+// WSPresencePayload carries one user's online state. LastSeen is a unix
+// timestamp, set only for offline transitions/snapshots.
+type WSPresencePayload struct {
+	UserID   int64  `json:"user_id"`
+	Online   bool   `json:"online"`
+	LastSeen *int64 `json:"last_seen,omitempty"`
+}
+
+// WSPresenceSnapshotPayload is the initial presence state of a chat's members,
+// pushed to a client right after it connects.
+type WSPresenceSnapshotPayload struct {
+	Users []WSPresencePayload `json:"users"`
 }
