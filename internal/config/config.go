@@ -113,11 +113,15 @@ func Load() (*Config, error) {
 	if cfg.GoogleClientID == "" {
 		fmt.Println("WARNING: GOOGLE_WEB_CLIENT_ID is not set")
 	}
+	// Секреты-капабилити обязаны быть заданы: пустой JWT-секрет означает подпись/
+	// проверку HMAC-ключом нулевой длины (форж токена под любой userID), пустой
+	// токен Telegram вырождает HMAC-ключ в sha256("") (форж подписи). Падаем на
+	// старте во всех окружениях, как уже делает проверка DB_DSN выше.
 	if cfg.TelegramBotToken == "" {
-		fmt.Println("WARNING: TELEGRAM_BOT_TOKEN is not set")
+		return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is not set")
 	}
 	if cfg.JWTSecret == "" {
-		fmt.Println("WARNING: JWT_SECRET_KEY is not set")
+		return nil, fmt.Errorf("JWT_SECRET_KEY is not set")
 	}
 	if cfg.Env == "" {
 		cfg.Env = "local"

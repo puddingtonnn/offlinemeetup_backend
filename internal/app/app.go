@@ -103,7 +103,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	wsHandler := websocket.NewWebSocketHandler(hub, log, chatService, profileService, presenceService, cfg.WSAllowedOrigins)
 	fileHandler := handler.NewFileHandler(fileService, log)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, authService, metricsHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, authService, metricsHandler, rdb, log, cfg)
 
 	return &App{
 		cfg:    cfg,

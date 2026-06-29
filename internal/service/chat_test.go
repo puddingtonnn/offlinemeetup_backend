@@ -164,6 +164,25 @@ func TestChatService_MarkAsRead(t *testing.T) {
 	assert.False(t, mr.Exists("user_chats:1"))
 }
 
+// Не-участник чата не должен инициировать рассылку messagesRead: репозиторий
+// возвращает ErrNotChatMember, сервис переводит его в ErrForbidden и НЕ зовёт
+// GetChatParticipantIDs (broadcast не происходит).
+func TestChatService_MarkAsRead_NotMember(t *testing.T) {
+	mr, _, mockRepo, svc := setupChatTest(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+
+	mockRepo.EXPECT().
+		MarkAsRead(ctx, int64(100), int64(7), int64(50)).
+		Return(repo.ErrNotChatMember)
+	// GetChatParticipantIDs не ожидается — gomock провалит тест, если его вызовут.
+
+	targetIDs, err := svc.MarkAsRead(ctx, 100, 7, 50)
+	require.ErrorIs(t, err, ErrForbidden)
+	assert.Nil(t, targetIDs)
+}
+
 func TestChatService_SendMessage_Validation(t *testing.T) {
 	ctx := context.Background()
 

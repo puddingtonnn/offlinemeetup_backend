@@ -166,6 +166,18 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 		return nil, nil, ErrNotChatMember
 	}
 
+	// Вложение должно принадлежать отправителю — нельзя приложить чужой файл по
+	// его id. Проверяем в той же транзакции, что и членство.
+	if msg.FileID.Valid {
+		owned, err := fileOwnedBy(ctx, tx, msg.FileID.UUID, msg.SenderID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !owned {
+			return nil, nil, ErrFileNotOwned
+		}
+	}
+
 	_, err = tx.NewInsert().Model(msg).Returning("id, created_at").Exec(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to insert message: %w", err)
@@ -316,7 +328,21 @@ func participantIDs(ctx context.Context, tx bun.IDB, chatID int64) ([]int64, err
 }
 
 func (r *ChatRepo) MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) error {
-	_, err := r.db.NewUpdate().
+	// Без этой проверки UPDATE для не-участника был бы тихим no-op (0 строк),
+	// а вызывающий слой всё равно разослал бы событие участникам чужого чата.
+	// Проверяем членство явно, как в SaveMessage.
+	exists, err := r.db.NewSelect().
+		TableExpr("chat_participants").
+		Where("chat_id = ? AND user_id = ?", chatID, userID).
+		Exists(ctx)
+	if err != nil {
+		return fmt.Errorf("checking chat membership failed: %w", err)
+	}
+	if !exists {
+		return ErrNotChatMember
+	}
+
+	_, err = r.db.NewUpdate().
 		Table("chat_participants").
 		Set("last_read_message_id = ?", lastReadMessageID).
 		Where("chat_id = ? AND user_id = ?", chatID, userID).

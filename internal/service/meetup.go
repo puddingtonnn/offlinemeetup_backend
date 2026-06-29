@@ -2,13 +2,18 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
+
+// maxMeetupOffset — верхняя граница пагинационного сдвига для списка митапов.
+const maxMeetupOffset = 100_000
 
 type MeetupRepository interface {
 	Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error)
@@ -89,7 +94,7 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 
 	created, err := s.repo.Create(ctx, meetup, chat, req.TagIDs)
 	if err != nil {
-		return nil, err
+		return nil, mapMeetupRepoError(err)
 	}
 
 	_ = s.chatCache.InvalidateUserChats(ctx, userID) // best-effort; cache layer logs failures
@@ -99,6 +104,15 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 	return mapMeetupToDTO(m, s.s3PublicURL)
+}
+
+// mapMeetupRepoError переводит инфра-sentinel'ы репозитория в доменные на границе
+// слоёв (как mapChatRepoError), чтобы хендлер вернул 403, а не 500.
+func mapMeetupRepoError(err error) error {
+	if errors.Is(err, repo.ErrFileNotOwned) {
+		return fmt.Errorf("cover file: %w", ErrForbidden)
+	}
+	return err
 }
 
 func (s *MeetupService) GetMeetup(ctx context.Context, id int64, userID int64) (*dto.MeetupResponse, error) {
@@ -132,6 +146,13 @@ func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dt
 	if filter.Limit > 100 {
 		filter.Limit = 100
 	}
+	// Ограничиваем offset: бессмысленно большой сдвиг — это деградация запроса.
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Offset > maxMeetupOffset {
+		filter.Offset = maxMeetupOffset
+	}
 
 	meetups, err := s.repo.List(ctx, filter, userID)
 	if err != nil {
@@ -141,6 +162,7 @@ func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dt
 	response := make([]*dto.MeetupResponse, len(meetups))
 	for i, m := range meetups {
 		response[i] = s.mapToResponse(&m)
+		gateInviteToken(response[i], userID) // токен виден только создателю
 	}
 	return response, nil
 }
@@ -164,6 +186,11 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		existing.Description = *req.Description
 	}
 	if req.IsPublic != nil {
+		// При переходе public→private ротируем инвайт-токен: любой токен,
+		// собранный пока митап был публичным, перестаёт работать на вступление.
+		if existing.IsPublic && !*req.IsPublic {
+			existing.InviteToken = uuid.New()
+		}
 		existing.IsPublic = *req.IsPublic
 	}
 	if req.StartTime != nil {
@@ -198,7 +225,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 	}
 
 	if err := s.repo.Update(ctx, existing, tagIDs); err != nil {
-		return nil, err
+		return nil, mapMeetupRepoError(err)
 	}
 
 	_ = s.meetupCache.InvalidateMeetup(ctx, meetupID) // best-effort; cache layer logs failures

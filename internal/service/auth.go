@@ -83,6 +83,13 @@ func (s *AuthService) LoginTelegram(ctx context.Context, params url.Values) (str
 }
 
 func (s *AuthService) validateTelegramHash(params url.Values) bool {
+	// Defense-in-depth: с пустым токеном secretKey вырождается в sha256("") —
+	// публичную константу, по которой любой подделает подпись. Конфиг уже не
+	// стартует с пустым токеном, но не доверяем этому в security-проверке.
+	if s.cfg.TelegramBotToken == "" {
+		return false
+	}
+
 	receivedHash := params.Get("hash")
 	if receivedHash == "" {
 		return false
@@ -112,7 +119,8 @@ func (s *AuthService) validateTelegramHash(params url.Values) bool {
 	hmacHash.Write([]byte(dataCheckString))
 	calculatedHash := hex.EncodeToString(hmacHash.Sum(nil))
 
-	return calculatedHash == receivedHash
+	// hmac.Equal — сравнение за константное время, без утечки по таймингу.
+	return hmac.Equal([]byte(calculatedHash), []byte(receivedHash))
 }
 
 func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, socialID string, email string) (string, error) {

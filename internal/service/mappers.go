@@ -89,3 +89,12 @@ func mapMeetupToDTO(m *domain.Meetup, s3URL string) *dto.MeetupResponse {
 		CoverURL:          publicURL(s3URL, m.CoverFile),
 	}
 }
+
+// gateInviteToken прячет инвайт-токен митапа от всех, кроме создателя. Токен —
+// это капабилити для вступления, поэтому он не должен утекать не-участникам и
+// анонимным читателям. Мутирует resp на месте; безопасно вызывать с nil.
+func gateInviteToken(resp *dto.MeetupResponse, callerID int64) {
+	if resp != nil && resp.CreatorID != callerID {
+		resp.InviteToken = ""
+	}
+}

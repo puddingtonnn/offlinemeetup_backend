@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
@@ -114,6 +116,9 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dt
 
 	_, err = s.profileRepo.UpdateProfile(ctx, existingProfile)
 	if err != nil {
+		if errors.Is(err, repo.ErrFileNotOwned) {
+			return nil, fmt.Errorf("avatar file: %w", ErrForbidden)
+		}
 		return nil, fmt.Errorf("updating profile error: %w", err)
 	}
 

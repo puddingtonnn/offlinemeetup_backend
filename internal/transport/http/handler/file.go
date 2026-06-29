@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 )
 
@@ -36,6 +37,12 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		response.RespondError(w, service.ErrUnauthorized, h.log)
+		return
+	}
+
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		response.RespondError(w, service.ErrInvalidInput, h.log)
@@ -43,7 +50,7 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	res, err := h.service.Upload(r.Context(), header.Filename, header.Header.Get("Content-Type"), header.Size, file)
+	res, err := h.service.Upload(r.Context(), userID, header.Filename, header.Header.Get("Content-Type"), header.Size, file)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return

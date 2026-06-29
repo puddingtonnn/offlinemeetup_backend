@@ -48,6 +48,9 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 		dtos := make([]dto.ChatResponse, 0, len(domainChats))
 		for _, c := range domainChats {
 			if resp := s.mapChatToResponse(&c); resp != nil {
+				// Встроенный митап тоже не должен светить инвайт-токен
+				// не-создателю (кеш чатов — per-user, так что это корректно).
+				gateInviteToken(resp.Meetup, userID)
 				dtos = append(dtos, *resp)
 			}
 		}
@@ -258,7 +261,7 @@ func (s *ChatService) mapMeetupToResponse(m *domain.Meetup) *dto.MeetupResponse 
 
 func (s *ChatService) MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) ([]int64, error) {
 	if err := s.repo.MarkAsRead(ctx, chatID, userID, lastReadMessageID); err != nil {
-		return nil, err
+		return nil, mapChatRepoError(err) // не-участник => ErrForbidden, как в SendMessage
 	}
 	_ = s.cache.InvalidateUserChats(ctx, userID) // best-effort; cache layer logs failures
 
@@ -276,7 +279,7 @@ func (s *ChatService) MarkAsRead(ctx context.Context, chatID, userID, lastReadMe
 // is kept via %w for logging and errors.Is.
 func mapChatRepoError(err error) error {
 	switch {
-	case errors.Is(err, repo.ErrNotChatMember), errors.Is(err, repo.ErrNotMessageAuthor):
+	case errors.Is(err, repo.ErrNotChatMember), errors.Is(err, repo.ErrNotMessageAuthor), errors.Is(err, repo.ErrFileNotOwned):
 		return fmt.Errorf("chat access denied: %w", ErrForbidden)
 	case errors.Is(err, repo.ErrChatReadOnly):
 		return fmt.Errorf("chat: %w", ErrChatReadOnly)

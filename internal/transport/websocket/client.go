@@ -168,14 +168,20 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 			targetIDs, err := c.chatService.MarkAsRead(timeoutCtx, req.ChatID, c.userID, req.LastReadMessageID)
 			if err != nil {
 				c.log.Error("failed to mark messages as read via WS", slog.Any("err", err))
-				c.sendError(ctx, event.RequestID, "failed to mark messages as read")
+				c.sendError(ctx, event.RequestID, wsErrorMessage(err))
 				return
 			}
 
+			// Рассылаем серверный payload, а не отражаем клиентский: иначе
+			// произвольные/спуфнутые поля ушли бы участникам чата.
+			readPayload, _ := json.Marshal(WSMessagesReadPayload{
+				ChatID:            req.ChatID,
+				LastReadMessageID: req.LastReadMessageID,
+			})
 			responseEvent := WSEvent{
 				Type:      EventMessagesRead,
 				RequestID: event.RequestID,
-				Payload:   event.Payload,
+				Payload:   readPayload,
 			}
 
 			finalData, _ := json.Marshal(responseEvent)

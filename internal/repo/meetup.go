@@ -31,6 +31,17 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *do
 
 	meetup.ParticipantsCount = 1
 
+	// Обложка должна принадлежать создателю — нельзя сослаться на чужой файл.
+	if meetup.CoverFileID.Valid {
+		owned, err := fileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, ErrFileNotOwned
+		}
+	}
+
 	_, err = tx.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at, invite_token").Exec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meetup creation failed: %w", err)
@@ -220,6 +231,17 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 
 func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// Новая обложка должна принадлежать создателю.
+		if meetup.CoverFileID.Valid {
+			owned, err := fileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID)
+			if err != nil {
+				return err
+			}
+			if !owned {
+				return ErrFileNotOwned
+			}
+		}
+
 		_, err := tx.NewUpdate().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).WherePK().Exec(ctx)
 		if err != nil {
 			return err

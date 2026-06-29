@@ -1,10 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -29,6 +30,16 @@ var allowedImageTypes = map[string]bool{
 	"image/gif":  true,
 }
 
+// imageTypeExt сопоставляет провалидированный MIME-тип с расширением. Расширение
+// берётся отсюда, а не из имени клиента, чтобы нельзя было задать произвольное
+// (active-content) расширение в публичном ключе объекта.
+var imageTypeExt = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+	"image/gif":  ".gif",
+}
+
 // maxFileSize — максимальный размер файла (10 MB), согласован с лимитом тела в хендлере.
 const maxFileSize = 10 << 20
 
@@ -46,7 +57,7 @@ func NewFileService(repo FileRepository, s3Client S3PutObjectAPI, cfg *config.Co
 	}
 }
 
-func (s *FileService) Upload(ctx context.Context, fileName string, contentType string, size int64, reader io.Reader) (*domain.File, error) {
+func (s *FileService) Upload(ctx context.Context, userID int64, fileName string, contentType string, size int64, reader io.Reader) (*domain.File, error) {
 	if !allowedImageTypes[contentType] {
 		return nil, fmt.Errorf("unsupported file type %q: %w", contentType, ErrInvalidInput)
 	}
@@ -54,27 +65,47 @@ func (s *FileService) Upload(ctx context.Context, fileName string, contentType s
 		return nil, fmt.Errorf("file size out of range: %w", ErrInvalidInput)
 	}
 
+	// Не доверяем заявленному клиентом Content-Type: определяем реальный тип по
+	// первым 512 байтам (mime-sniffing) и от него берём и расширение, и
+	// сохраняемый Content-Type. Иначе можно залить произвольные байты под видом
+	// картинки или подсунуть active-content расширение в публичный ключ объекта.
+	head := make([]byte, 512)
+	n, err := io.ReadFull(reader, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, fmt.Errorf("reading file head: %w", err)
+	}
+	head = head[:n]
+
+	detected := http.DetectContentType(head)
+	ext, ok := imageTypeExt[detected]
+	if !ok {
+		return nil, fmt.Errorf("file content is not an allowed image (%s): %w", detected, ErrInvalidInput)
+	}
+
 	fileID := uuid.New()
-	ext := filepath.Ext(fileName)
 	key := fmt.Sprintf("uploads/%s%s", fileID.String(), ext)
 
-	_, err := s.s3Client.PutObject(ctx, &s3.PutObjectInput{
+	// Возвращаем прочитанный префикс обратно в поток перед загрузкой.
+	body := io.MultiReader(bytes.NewReader(head), reader)
+
+	_, err = s.s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.cfg.S3Bucket),
 		Key:         aws.String(key),
-		Body:        reader,
-		ContentType: aws.String(contentType),
+		Body:        body,
+		ContentType: aws.String(detected),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload to s3: %w", err)
 	}
 
 	file := &domain.File{
-		ID:       fileID,
-		FileName: fileName,
-		Key:      key,
-		Bucket:   s.cfg.S3Bucket,
-		Size:     size,
-		MimeType: contentType,
+		ID:         fileID,
+		FileName:   fileName,
+		Key:        key,
+		Bucket:     s.cfg.S3Bucket,
+		Size:       size,
+		MimeType:   detected,
+		UploadedBy: &userID,
 	}
 
 	if err := s.repo.Create(ctx, file); err != nil {

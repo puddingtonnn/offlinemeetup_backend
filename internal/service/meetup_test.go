@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -468,4 +469,57 @@ func TestMeetupService_ListMeetups(t *testing.T) {
 	require.Len(t, list, 2)
 	assert.Equal(t, int64(1), list[0].ID)
 	assert.Equal(t, "B", list[1].Title)
+}
+
+// Тест безопасности: invite_token виден только создателю. Один общий снапшот в
+// кеше хранит полный токен, а на чтении он прячется от всех, кроме создателя.
+func TestMeetupService_GetMeetup_InviteTokenGating(t *testing.T) {
+	mr, _, mockRepo, svc := setupMeetupTest(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+	meetupID := int64(100)
+	token := uuid.New()
+	creatorID := int64(99)
+
+	mockRepo.EXPECT().
+		GetByID(ctx, meetupID, int64(0)).
+		Return(&domain.Meetup{
+			ID:          meetupID,
+			IsPublic:    true,
+			CreatorID:   creatorID,
+			InviteToken: token,
+		}, nil).
+		Times(1) // снапшот общий, грузится один раз
+
+	asCreator, err := svc.GetMeetup(ctx, meetupID, creatorID)
+	require.NoError(t, err)
+	assert.Equal(t, token.String(), asCreator.InviteToken, "создатель видит токен")
+
+	asStranger, err := svc.GetMeetup(ctx, meetupID, int64(7))
+	require.NoError(t, err)
+	assert.Empty(t, asStranger.InviteToken, "посторонний не видит токен даже у публичного митапа")
+}
+
+// invite_token в списке также скрыт у чужих митапов и показан у своих.
+func TestMeetupService_ListMeetups_InviteTokenGating(t *testing.T) {
+	mr, _, mockRepo, svc := setupMeetupTest(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+	caller := int64(1)
+	myToken := uuid.New()
+
+	mockRepo.EXPECT().
+		List(ctx, gomock.Any(), caller).
+		Return([]domain.Meetup{
+			{ID: 1, IsPublic: true, CreatorID: caller, InviteToken: myToken},
+			{ID: 2, IsPublic: true, CreatorID: 999, InviteToken: uuid.New()},
+		}, nil)
+
+	list, err := svc.ListMeetups(ctx, caller, dto.MeetupFilter{})
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	assert.Equal(t, myToken.String(), list[0].InviteToken, "свой митап — токен виден")
+	assert.Empty(t, list[1].InviteToken, "чужой митап — токен скрыт")
 }

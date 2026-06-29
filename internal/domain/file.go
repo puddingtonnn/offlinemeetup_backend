@@ -10,11 +10,14 @@ import (
 type File struct {
 	bun.BaseModel `bun:"table:files"`
 
-	ID        uuid.UUID `bun:"type:uuid,pk,default:gen_random_uuid()"`
-	FileName  string    `bun:",notnull"`
-	Key       string    `bun:",notnull,unique"` // S3 Key
-	Bucket    string    `bun:",notnull"`
-	Size      int64     `bun:",notnull"`
-	MimeType  string    `bun:",notnull"`
-	CreatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	ID       uuid.UUID `bun:"type:uuid,pk,default:gen_random_uuid()"`
+	FileName string    `bun:",notnull"`
+	Key      string    `bun:",notnull,unique"` // S3 Key
+	Bucket   string    `bun:",notnull"`
+	Size     int64     `bun:",notnull"`
+	MimeType string    `bun:",notnull"`
+	// UploadedBy — кто загрузил файл; по нему проверяется владение при ссылке на
+	// файл (cover/avatar/attachment). Nullable: legacy-строки и ON DELETE SET NULL.
+	UploadedBy *int64    `bun:"uploaded_by"`
+	CreatedAt  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 }
