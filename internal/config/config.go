@@ -43,6 +43,11 @@ type Config struct {
 	PresenceTTL time.Duration
 
 	WSAllowedOrigins []string
+
+	// MaxUploadSize — максимальный размер загружаемого файла в байтах
+	// (MAX_UPLOAD_SIZE, дефолт 100 MB). Применяется и в хендлере (MaxBytesReader),
+	// и в FileService.Upload.
+	MaxUploadSize int64
 }
 
 // durEnv reads a duration from env (e.g. "200ms", "5m"); on an empty or
@@ -51,6 +56,17 @@ func durEnv(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return def
+}
+
+// int64Env reads an integer (bytes) from env; on an empty or unparseable value
+// it returns def.
+func int64Env(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
 		}
 	}
 	return def
@@ -94,6 +110,7 @@ func Load() (*Config, error) {
 	cfg.CacheTTLProfile = durEnv("CACHE_TTL_PROFILE", 10*time.Minute)
 	cfg.CacheTTLMeetup = durEnv("CACHE_TTL_MEETUP", 2*time.Minute)
 	cfg.PresenceTTL = durEnv("PRESENCE_TTL", 2*time.Minute)
+	cfg.MaxUploadSize = int64Env("MAX_UPLOAD_SIZE", 100<<20)
 
 	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
 		for _, o := range strings.Split(origins, ",") {

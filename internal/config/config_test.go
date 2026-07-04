@@ -66,3 +66,23 @@ func TestLoad_MissingTelegramToken(t *testing.T) {
 	_, err := Load()
 	require.Error(t, err)
 }
+
+func TestLoad_MaxUploadSizeDefault(t *testing.T) {
+	setRequiredSecrets(t)
+	t.Setenv("DB_DSN", "postgres://localhost/test")
+	t.Setenv("MAX_UPLOAD_SIZE", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, int64(100<<20), cfg.MaxUploadSize)
+}
+
+func TestLoad_MaxUploadSizeOverride(t *testing.T) {
+	setRequiredSecrets(t)
+	t.Setenv("DB_DSN", "postgres://localhost/test")
+	t.Setenv("MAX_UPLOAD_SIZE", "52428800") // 50 MB
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, int64(52428800), cfg.MaxUploadSize)
+}
