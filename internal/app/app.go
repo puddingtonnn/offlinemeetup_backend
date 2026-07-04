@@ -101,7 +101,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	geoHandler := handler.NewGeoHandler(geoService)
 	chatHandler := handler.NewChatHandler(chatService, presenceService, hub, log)
 	wsHandler := websocket.NewWebSocketHandler(hub, log, chatService, profileService, presenceService, cfg.WSAllowedOrigins)
-	fileHandler := handler.NewFileHandler(fileService, log)
+	fileHandler := handler.NewFileHandler(fileService, cfg.MaxUploadSize, log)
 
 	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, authService, metricsHandler, rdb, log, cfg)
 

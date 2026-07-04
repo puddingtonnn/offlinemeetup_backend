@@ -1,17 +1,16 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/service/media"
 )
 
 type FileRepository interface {
@@ -21,27 +20,6 @@ type FileRepository interface {
 type S3PutObjectAPI interface {
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 }
-
-// allowedImageTypes — разрешённые MIME-типы для загрузки (аватары, обложки).
-var allowedImageTypes = map[string]bool{
-	"image/jpeg": true,
-	"image/png":  true,
-	"image/webp": true,
-	"image/gif":  true,
-}
-
-// imageTypeExt сопоставляет провалидированный MIME-тип с расширением. Расширение
-// берётся отсюда, а не из имени клиента, чтобы нельзя было задать произвольное
-// (active-content) расширение в публичном ключе объекта.
-var imageTypeExt = map[string]string{
-	"image/jpeg": ".jpg",
-	"image/png":  ".png",
-	"image/webp": ".webp",
-	"image/gif":  ".gif",
-}
-
-// maxFileSize — максимальный размер файла (10 MB), согласован с лимитом тела в хендлере.
-const maxFileSize = 10 << 20
 
 type FileService struct {
 	repo     FileRepository
@@ -57,18 +35,15 @@ func NewFileService(repo FileRepository, s3Client S3PutObjectAPI, cfg *config.Co
 	}
 }
 
-func (s *FileService) Upload(ctx context.Context, userID int64, fileName string, contentType string, size int64, reader io.Reader) (*domain.File, error) {
-	if !allowedImageTypes[contentType] {
-		return nil, fmt.Errorf("unsupported file type %q: %w", contentType, ErrInvalidInput)
-	}
-	if size <= 0 || size > maxFileSize {
+// Upload validates a file by its real bytes (media whitelist), then stores it in
+// S3 and records its metadata. reader must be seekable: the first 512 bytes are
+// read to sniff the type, then it is rewound so the SDK can sign and stream the
+// body without buffering the whole file in memory.
+func (s *FileService) Upload(ctx context.Context, userID int64, fileName string, size int64, reader io.ReadSeeker) (*domain.File, error) {
+	if size <= 0 || size > s.cfg.MaxUploadSize {
 		return nil, fmt.Errorf("file size out of range: %w", ErrInvalidInput)
 	}
 
-	// Не доверяем заявленному клиентом Content-Type: определяем реальный тип по
-	// первым 512 байтам (mime-sniffing) и от него берём и расширение, и
-	// сохраняемый Content-Type. Иначе можно залить произвольные байты под видом
-	// картинки или подсунуть active-content расширение в публичный ключ объекта.
 	head := make([]byte, 512)
 	n, err := io.ReadFull(reader, head)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
@@ -76,23 +51,24 @@ func (s *FileService) Upload(ctx context.Context, userID int64, fileName string,
 	}
 	head = head[:n]
 
-	detected := http.DetectContentType(head)
-	ext, ok := imageTypeExt[detected]
+	mimeType, ext, ok := media.Detect(head)
 	if !ok {
-		return nil, fmt.Errorf("file content is not an allowed image (%s): %w", detected, ErrInvalidInput)
+		return nil, fmt.Errorf("file content is not an allowed media type: %w", ErrInvalidInput)
+	}
+
+	if _, err := reader.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("rewinding upload stream: %w", err)
 	}
 
 	fileID := uuid.New()
 	key := fmt.Sprintf("uploads/%s%s", fileID.String(), ext)
 
-	// Возвращаем прочитанный префикс обратно в поток перед загрузкой.
-	body := io.MultiReader(bytes.NewReader(head), reader)
-
 	_, err = s.s3Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(s.cfg.S3Bucket),
-		Key:         aws.String(key),
-		Body:        body,
-		ContentType: aws.String(detected),
+		Bucket:        aws.String(s.cfg.S3Bucket),
+		Key:           aws.String(key),
+		Body:          reader,
+		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(mimeType),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload to s3: %w", err)
@@ -104,7 +80,7 @@ func (s *FileService) Upload(ctx context.Context, userID int64, fileName string,
 		Key:        key,
 		Bucket:     s.cfg.S3Bucket,
 		Size:       size,
-		MimeType:   detected,
+		MimeType:   mimeType,
 		UploadedBy: &userID,
 	}
 
