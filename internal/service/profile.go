@@ -119,6 +119,9 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dt
 		if errors.Is(err, repo.ErrFileNotOwned) {
 			return nil, fmt.Errorf("avatar file: %w", ErrForbidden)
 		}
+		if errors.Is(err, repo.ErrFileNotImage) {
+			return nil, fmt.Errorf("avatar file must be an image: %w", ErrInvalidInput)
+		}
 		return nil, fmt.Errorf("updating profile error: %w", err)
 	}
 

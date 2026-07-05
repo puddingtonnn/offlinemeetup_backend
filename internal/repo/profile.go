@@ -33,14 +33,10 @@ func (r *ProfileRepo) GetByUserID(ctx context.Context, userID int64) (*domain.Pr
 }
 
 func (r *ProfileRepo) UpdateProfile(ctx context.Context, profile *domain.Profile) (*domain.Profile, error) {
-	// Аватар должен принадлежать владельцу профиля.
+	// Аватар должен принадлежать владельцу профиля и быть изображением.
 	if profile.AvatarFileID.Valid {
-		owned, err := fileOwnedBy(ctx, r.db, profile.AvatarFileID.UUID, profile.UserID)
-		if err != nil {
+		if err := imageFileOwnedBy(ctx, r.db, profile.AvatarFileID.UUID, profile.UserID); err != nil {
 			return nil, err
-		}
-		if !owned {
-			return nil, ErrFileNotOwned
 		}
 	}
 

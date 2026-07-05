@@ -15,6 +15,7 @@ import (
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo/mocks"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
@@ -374,6 +375,23 @@ func TestMeetupService_UpdateMeetup(t *testing.T) {
 		_, err := svc.UpdateMeetup(ctx, userID, meetupID, dto.UpdateMeetupRequest{})
 		require.ErrorIs(t, err, ErrNotFound)
 	})
+
+	t.Run("cover not image", func(t *testing.T) {
+		mr, _, mockRepo, svc := setupMeetupTest(t)
+		defer mr.Close()
+
+		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).
+			Return(&domain.Meetup{ID: meetupID, CreatorID: userID, Title: "old"}, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any(), gomock.Any()).Return(repo.ErrFileNotImage)
+
+		coverFileID := uuid.New().String()
+		_, err := svc.UpdateMeetup(ctx, userID, meetupID, dto.UpdateMeetupRequest{CoverFileID: &coverFileID})
+		require.ErrorIs(t, err, ErrInvalidInput)
+	})
+}
+
+func TestMapMeetupRepoError_NotImage(t *testing.T) {
+	assert.ErrorIs(t, mapMeetupRepoError(repo.ErrFileNotImage), ErrInvalidInput)
 }
 
 func TestMeetupService_DeleteMeetup(t *testing.T) {

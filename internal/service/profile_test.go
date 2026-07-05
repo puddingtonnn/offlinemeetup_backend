@@ -15,6 +15,7 @@ import (
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
@@ -209,6 +210,27 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 
 		assert.NoError(t, err)
 		tagRepo.AssertNotCalled(t, "UpdateTags", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("avatar not image", func(t *testing.T) {
+		wantErr := repo.ErrFileNotImage
+
+		profileRepo := new(MockProfileRepo)
+		tagRepo := new(MockUserTagUpdater)
+
+		existing := &domain.Profile{ID: 100, UserID: testUserID, Nickname: "old"}
+		profileRepo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
+		profileRepo.On("UpdateProfile", mock.Anything, mock.Anything).Return(nil, wantErr)
+
+		_, pc := newProfileCache(t)
+		svc := NewProfileService(profileRepo, tagRepo, pc, "https://s3.local")
+
+		avatarFileID := "550e8400-e29b-41d4-a716-446655440000"
+		_, err := svc.UpdateProfile(context.Background(), testUserID, dto.UpdateProfileRequest{
+			AvatarFileID: &avatarFileID,
+		})
+
+		assert.ErrorIs(t, err, ErrInvalidInput)
 	})
 }
 

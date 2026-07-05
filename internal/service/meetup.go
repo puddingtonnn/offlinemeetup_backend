@@ -109,8 +109,11 @@ func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 // mapMeetupRepoError переводит инфра-sentinel'ы репозитория в доменные на границе
 // слоёв (как mapChatRepoError), чтобы хендлер вернул 403, а не 500.
 func mapMeetupRepoError(err error) error {
-	if errors.Is(err, repo.ErrFileNotOwned) {
+	switch {
+	case errors.Is(err, repo.ErrFileNotOwned):
 		return fmt.Errorf("cover file: %w", ErrForbidden)
+	case errors.Is(err, repo.ErrFileNotImage):
+		return fmt.Errorf("cover file must be an image: %w", ErrInvalidInput)
 	}
 	return err
 }

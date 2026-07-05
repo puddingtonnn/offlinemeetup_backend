@@ -31,14 +31,10 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *do
 
 	meetup.ParticipantsCount = 1
 
-	// Обложка должна принадлежать создателю — нельзя сослаться на чужой файл.
+	// Обложка должна принадлежать создателю и быть изображением.
 	if meetup.CoverFileID.Valid {
-		owned, err := fileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID)
-		if err != nil {
+		if err := imageFileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID); err != nil {
 			return nil, err
-		}
-		if !owned {
-			return nil, ErrFileNotOwned
 		}
 	}
 
@@ -231,14 +227,10 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 
 func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// Новая обложка должна принадлежать создателю.
+		// Новая обложка должна принадлежать создателю и быть изображением.
 		if meetup.CoverFileID.Valid {
-			owned, err := fileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID)
-			if err != nil {
+			if err := imageFileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID); err != nil {
 				return err
-			}
-			if !owned {
-				return ErrFileNotOwned
 			}
 		}
 
