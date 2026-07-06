@@ -1,6 +1,17 @@
 package dto
 
-import "time"
+import (
+	"time"
+	"unicode/utf8"
+)
+
+// Границы длины текстовых полей митапа (в символах, не байтах — важно для
+// кириллицы). Ограничивают раздувание строк БД и кеш-снапшотов.
+const (
+	maxTitleLen       = 200
+	maxDescriptionLen = 5000
+	maxAddressLen     = 500
+)
 
 type Coordinates struct {
 	Lat float64 `json:"lat"`
@@ -21,8 +32,14 @@ type CreateMeetupRequest struct {
 
 func (r *CreateMeetupRequest) Validate() map[string]string {
 	errs := make(map[string]string)
-	if len(r.Title) < 3 {
-		errs["title"] = "must be at least 3 chars"
+	if n := utf8.RuneCountInString(r.Title); n < 3 || n > maxTitleLen {
+		errs["title"] = "must be 3–200 chars"
+	}
+	if utf8.RuneCountInString(r.Description) > maxDescriptionLen {
+		errs["description"] = "must be at most 5000 chars"
+	}
+	if utf8.RuneCountInString(r.Address) > maxAddressLen {
+		errs["address"] = "must be at most 500 chars"
 	}
 	if r.StartTime.Before(time.Now()) {
 		errs["start_time"] = "cannot be in the past"
@@ -41,8 +58,16 @@ func (r *CreateMeetupRequest) Validate() map[string]string {
 
 func (r *UpdateMeetupRequest) Validate() map[string]string {
 	errs := make(map[string]string)
-	if r.Title != nil && len(*r.Title) < 3 {
-		errs["title"] = "must be at least 3 chars"
+	if r.Title != nil {
+		if n := utf8.RuneCountInString(*r.Title); n < 3 || n > maxTitleLen {
+			errs["title"] = "must be 3–200 chars"
+		}
+	}
+	if r.Description != nil && utf8.RuneCountInString(*r.Description) > maxDescriptionLen {
+		errs["description"] = "must be at most 5000 chars"
+	}
+	if r.Address != nil && utf8.RuneCountInString(*r.Address) > maxAddressLen {
+		errs["address"] = "must be at most 500 chars"
 	}
 	if r.StartTime != nil && r.EndTime != nil && r.EndTime.Before(*r.StartTime) {
 		errs["end_time"] = "must be after start time"

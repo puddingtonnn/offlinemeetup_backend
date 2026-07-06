@@ -231,7 +231,7 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 // actor is its author and it is not deleted. The row is locked FOR UPDATE so the
 // author/deleted checks and the update are atomic. Returns the reloaded message
 // and the chat's participant IDs for broadcast.
-func (r *ChatRepo) EditMessage(ctx context.Context, msgID, editorID int64, content string) (*domain.Message, []int64, error) {
+func (r *ChatRepo) EditMessage(ctx context.Context, chatID, msgID, editorID int64, content string) (*domain.Message, []int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, err
@@ -241,6 +241,11 @@ func (r *ChatRepo) EditMessage(ctx context.Context, msgID, editorID int64, conte
 	existing, err := lockMessage(ctx, tx, msgID)
 	if err != nil {
 		return nil, nil, err
+	}
+	// Сообщение должно принадлежать чату из URL — иначе для этого чата его "нет"
+	// (не раскрываем, что id существует в другом чате).
+	if existing.ChatID != chatID {
+		return nil, nil, ErrMessageNotFound
 	}
 	if existing.SenderID != editorID {
 		return nil, nil, ErrNotMessageAuthor
@@ -275,7 +280,7 @@ func (r *ChatRepo) EditMessage(ctx context.Context, msgID, editorID int64, conte
 // DeleteMessage soft-deletes a message (stamps deleted_at) if the actor is its
 // author and it is not already deleted. Returns the chat ID and participant IDs
 // for broadcast.
-func (r *ChatRepo) DeleteMessage(ctx context.Context, msgID, editorID int64) (int64, []int64, error) {
+func (r *ChatRepo) DeleteMessage(ctx context.Context, chatID, msgID, editorID int64) (int64, []int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, nil, err
@@ -285,6 +290,10 @@ func (r *ChatRepo) DeleteMessage(ctx context.Context, msgID, editorID int64) (in
 	existing, err := lockMessage(ctx, tx, msgID)
 	if err != nil {
 		return 0, nil, err
+	}
+	// Сообщение должно принадлежать чату из URL (см. EditMessage).
+	if existing.ChatID != chatID {
+		return 0, nil, ErrMessageNotFound
 	}
 	if existing.SenderID != editorID {
 		return 0, nil, ErrNotMessageAuthor

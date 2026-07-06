@@ -21,8 +21,8 @@ type ChatRepository interface {
 	GetUserChats(ctx context.Context, userID int64) ([]domain.Chat, error)
 	GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]domain.Message, error)
 	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error)
-	EditMessage(ctx context.Context, msgID, editorID int64, content string) (*domain.Message, []int64, error)
-	DeleteMessage(ctx context.Context, msgID, editorID int64) (int64, []int64, error)
+	EditMessage(ctx context.Context, chatID, msgID, editorID int64, content string) (*domain.Message, []int64, error)
+	DeleteMessage(ctx context.Context, chatID, msgID, editorID int64) (int64, []int64, error)
 	MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) error
 	GetChatParticipantIDs(ctx context.Context, chatID int64) ([]int64, error)
 	GetCoChatUserIDs(ctx context.Context, userID int64) ([]int64, error)
@@ -116,13 +116,13 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 // EditMessage updates an existing message's text. Only the author may edit, and
 // not a deleted message (enforced in the repo). Returns the updated message and
 // the chat's participant IDs for broadcast.
-func (s *ChatService) EditMessage(ctx context.Context, msgID, editorID int64, content string) (*dto.MessageResponse, []int64, error) {
+func (s *ChatService) EditMessage(ctx context.Context, chatID, msgID, editorID int64, content string) (*dto.MessageResponse, []int64, error) {
 	content = strings.TrimSpace(content)
 	if err := validateMessageContent(content, false); err != nil {
 		return nil, nil, err
 	}
 
-	updated, targetIDs, err := s.repo.EditMessage(ctx, msgID, editorID, content)
+	updated, targetIDs, err := s.repo.EditMessage(ctx, chatID, msgID, editorID, content)
 	if err != nil {
 		return nil, nil, mapChatRepoError(err)
 	}
@@ -135,8 +135,9 @@ func (s *ChatService) EditMessage(ctx context.Context, msgID, editorID int64, co
 
 // DeleteMessage soft-deletes a message (author only). Returns the chat ID and
 // participant IDs for broadcast.
-func (s *ChatService) DeleteMessage(ctx context.Context, msgID, editorID int64) (int64, []int64, error) {
-	chatID, targetIDs, err := s.repo.DeleteMessage(ctx, msgID, editorID)
+func (s *ChatService) DeleteMessage(ctx context.Context, chatID, msgID, editorID int64) (int64, []int64, error) {
+	// repo вернёт тот же chatID (он же проверил принадлежность) — используем param.
+	_, targetIDs, err := s.repo.DeleteMessage(ctx, chatID, msgID, editorID)
 	if err != nil {
 		return 0, nil, mapChatRepoError(err)
 	}

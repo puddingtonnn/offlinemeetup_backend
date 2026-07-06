@@ -223,6 +223,12 @@ func (h *ChatHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	chatID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		response.RespondError(w, fmt.Errorf("invalid chat id: %w", service.ErrInvalidInput), h.log)
+		return
+	}
+
 	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageId"), 10, 64)
 	if err != nil {
 		response.RespondError(w, fmt.Errorf("invalid message id: %w", service.ErrInvalidInput), h.log)
@@ -235,7 +241,7 @@ func (h *ChatHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, targetIDs, err := h.service.EditMessage(r.Context(), messageID, userID, req.Content)
+	msg, targetIDs, err := h.service.EditMessage(r.Context(), chatID, messageID, userID, req.Content)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
@@ -266,13 +272,19 @@ func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	chatID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		response.RespondError(w, fmt.Errorf("invalid chat id: %w", service.ErrInvalidInput), h.log)
+		return
+	}
+
 	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageId"), 10, 64)
 	if err != nil {
 		response.RespondError(w, fmt.Errorf("invalid message id: %w", service.ErrInvalidInput), h.log)
 		return
 	}
 
-	chatID, targetIDs, err := h.service.DeleteMessage(r.Context(), messageID, userID)
+	_, targetIDs, err := h.service.DeleteMessage(r.Context(), chatID, messageID, userID)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return

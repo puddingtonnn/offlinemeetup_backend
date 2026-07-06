@@ -287,10 +287,10 @@ func TestChatService_EditMessage(t *testing.T) {
 
 		edited := time.Now()
 		mockRepo.EXPECT().
-			EditMessage(ctx, int64(10), int64(1), "new text").
+			EditMessage(ctx, int64(5), int64(10), int64(1), "new text").
 			Return(&domain.Message{ID: 10, ChatID: 5, SenderID: 1, Content: "new text", EditedAt: &edited}, []int64{2}, nil)
 
-		resp, targetIDs, err := svc.EditMessage(ctx, 10, 1, "new text")
+		resp, targetIDs, err := svc.EditMessage(ctx, 5, 10, 1, "new text")
 		require.NoError(t, err)
 		assert.Equal(t, "new text", resp.Content)
 		require.NotNil(t, resp.EditedAt)
@@ -303,10 +303,10 @@ func TestChatService_EditMessage(t *testing.T) {
 		defer mr.Close()
 
 		mockRepo.EXPECT().
-			EditMessage(ctx, int64(10), int64(99), "x").
+			EditMessage(ctx, int64(5), int64(10), int64(99), "x").
 			Return(nil, nil, repo.ErrNotMessageAuthor)
 
-		_, _, err := svc.EditMessage(ctx, 10, 99, "x")
+		_, _, err := svc.EditMessage(ctx, 5, 10, 99, "x")
 		require.ErrorIs(t, err, ErrForbidden)
 	})
 
@@ -314,7 +314,7 @@ func TestChatService_EditMessage(t *testing.T) {
 		mr, _, _, svc := setupChatTest(t)
 		defer mr.Close()
 
-		_, _, err := svc.EditMessage(ctx, 10, 1, "   ")
+		_, _, err := svc.EditMessage(ctx, 5, 10, 1, "   ")
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 }
@@ -327,10 +327,10 @@ func TestChatService_DeleteMessage(t *testing.T) {
 		defer mr.Close()
 
 		mockRepo.EXPECT().
-			DeleteMessage(ctx, int64(10), int64(1)).
+			DeleteMessage(ctx, int64(5), int64(10), int64(1)).
 			Return(int64(5), []int64{1, 2}, nil)
 
-		chatID, targetIDs, err := svc.DeleteMessage(ctx, 10, 1)
+		chatID, targetIDs, err := svc.DeleteMessage(ctx, 5, 10, 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(5), chatID)
 		assert.ElementsMatch(t, []int64{1, 2}, targetIDs)
@@ -341,10 +341,10 @@ func TestChatService_DeleteMessage(t *testing.T) {
 		defer mr.Close()
 
 		mockRepo.EXPECT().
-			DeleteMessage(ctx, int64(10), int64(1)).
+			DeleteMessage(ctx, int64(5), int64(10), int64(1)).
 			Return(int64(0), nil, repo.ErrMessageNotFound)
 
-		_, _, err := svc.DeleteMessage(ctx, 10, 1)
+		_, _, err := svc.DeleteMessage(ctx, 5, 10, 1)
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 }
