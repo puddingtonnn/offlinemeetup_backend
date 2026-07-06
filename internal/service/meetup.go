@@ -83,9 +83,10 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 
 	if req.CoverFileID != nil && *req.CoverFileID != "" {
 		id, err := uuid.Parse(*req.CoverFileID)
-		if err == nil {
-			meetup.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
+		if err != nil {
+			return nil, fmt.Errorf("invalid cover_file_id: %w", ErrInvalidInput)
 		}
+		meetup.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
 	chat := &domain.Chat{
@@ -216,9 +217,10 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 			existing.CoverFileID = uuid.NullUUID{}
 		} else {
 			id, err := uuid.Parse(*req.CoverFileID)
-			if err == nil {
-				existing.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
+			if err != nil {
+				return nil, fmt.Errorf("invalid cover_file_id: %w", ErrInvalidInput)
 			}
+			existing.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
 		}
 	}
 

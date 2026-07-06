@@ -77,6 +77,25 @@ func TestLoad(t *testing.T) {
 		require.ErrorIs(t, err, wantErr)
 		assert.False(t, mr.Exists("k"))
 	})
+
+	t.Run("nil pointer result is not cached (no null-poisoning)", func(t *testing.T) {
+		mr, c := newTestCache(t)
+		calls := 0
+		load := func() (*int, error) {
+			calls++
+			return nil, nil // "not found" от указательного loader'а
+		}
+		got, err := Load(ctx, c, NopMetrics, "test", "k", ttl, load)
+		require.NoError(t, err)
+		assert.Nil(t, got)
+		// Значение "null" не должно попасть в кеш: иначе следующий Load вернул бы
+		// nil как "хит" до истечения TTL, минуя loader.
+		assert.False(t, mr.Exists("k"), "nil result must not be cached")
+
+		_, err = Load(ctx, c, NopMetrics, "test", "k", ttl, load)
+		require.NoError(t, err)
+		assert.Equal(t, 2, calls, "nil-возврат не кешируется — повторный Load снова идёт в loader")
+	})
 }
 
 // TestLoad_SingleflightCollapsesConcurrentMisses — конкурентные промахи по
@@ -164,6 +183,7 @@ func TestLoad_Metrics_BackendErrorCountsError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 42, got)
 	assert.Positive(t, atomic.LoadInt32(&m.errors), "сбой Get должен инкрементить Error")
+	assert.Zero(t, atomic.LoadInt32(&m.misses), "сбой Get не должен ещё и считаться Miss (двойной учёт)")
 }
 
 func TestJitter_WithinBounds(t *testing.T) {

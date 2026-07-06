@@ -86,6 +86,7 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		chatService: h.chatService,
 		presence:    h.presenceService,
 		log:         h.log,
+		cancel:      cancel,
 	}
 	client.hub.register <- client
 

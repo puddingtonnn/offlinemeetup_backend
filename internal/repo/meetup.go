@@ -29,7 +29,8 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *do
 	}
 	defer tx.Rollback()
 
-	meetup.ParticipantsCount = 1
+	// participants_count ведёт триггер БД (trg_participants_count) на вставку
+	// creator-участника ниже — руками не трогаем, иначе двойной счёт.
 
 	// Обложка должна принадлежать создателю и быть изображением.
 	if meetup.CoverFileID.Valid {
@@ -234,7 +235,15 @@ func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagID
 			}
 		}
 
-		_, err := tx.NewUpdate().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).WherePK().Exec(ctx)
+		// Обновляем только редактируемые поля. Model(meetup) без ExcludeColumn
+		// переписал бы ВСЕ колонки значениями из ранее прочитанного existing —
+		// включая participants_count (гонка lost-update с параллельным Join/
+		// Leave) и неизменяемые creator_id/created_at/status.
+		_, err := tx.NewUpdate().Model(meetup).
+			ExcludeColumn("participants_count", "status", "creator_id", "created_at").
+			Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).
+			WherePK().
+			Exec(ctx)
 		if err != nil {
 			return err
 		}
@@ -316,18 +325,10 @@ func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
 		return err
 	}
 	// Пользователь уже участник (в т.ч. при гонке двух одновременных join) —
-	// выходим без изменения счётчика и без добавления в чат.
+	// выходим без добавления в чат. ON CONFLICT DO NOTHING не вставляет строку,
+	// поэтому триггер счётчика тоже не срабатывает (счётчик остаётся верным).
 	if inserted == 0 {
 		return tx.Commit()
-	}
-
-	_, err = tx.NewUpdate().
-		Table("meetups").
-		Set("participants_count = participants_count + 1").
-		Where("id = ?", meetupID).
-		Exec(ctx)
-	if err != nil {
-		return err
 	}
 
 	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
@@ -375,12 +376,19 @@ func (r *MeetupRepo) Leave(ctx context.Context, meetupID, userID int64) error {
 		return nil
 	}
 
-	_, err = tx.NewUpdate().
-		Table("meetups").
-		Set("participants_count = participants_count - 1").
-		Where("id = ? AND participants_count > 0", meetupID).
-		Exec(ctx)
+	// participants_count ведёт триггер БД на DELETE participants — руками не
+	// трогаем. Симметрично Join: покидая митап, пользователь должен потерять
+	// доступ к групповому чату — иначе остаётся в chat_participants и продолжает
+	// читать/писать (проверки членства идут через EXISTS). ErrNoRows (у митапа
+	// нет чата) — не ошибка.
+	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return tx.Commit()
+		}
+		return err
+	}
+	if err := r.chatRepo.RemoveParticipant(ctx, tx, chat.ID, userID); err != nil {
 		return err
 	}
 

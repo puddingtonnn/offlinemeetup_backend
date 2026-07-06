@@ -5,12 +5,28 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 )
+
+// tokenResponse maps the service token pair to the wire DTO.
+func tokenResponse(t *service.TokenPair) dto.AuthTokensResponse {
+	return dto.AuthTokensResponse{
+		AccessToken:  t.AccessToken,
+		RefreshToken: t.RefreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    t.ExpiresIn,
+	}
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
 
 type AuthHandler struct {
 	service *service.AuthService
@@ -42,13 +58,13 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.service.LoginGoogle(r.Context(), req.Token)
+	tokens, err := h.service.LoginGoogle(r.Context(), req.Token)
 	if err != nil {
 		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]string{"token": token})
+	response.JSON(w, http.StatusOK, tokenResponse(tokens))
 }
 
 // TelegramCallBack TelegramCallback
@@ -64,7 +80,7 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.service.LoginTelegram(r.Context(), q)
+	tokens, err := h.service.LoginTelegram(r.Context(), q)
 	if err != nil {
 		h.log.Error("Telegram login failed", slog.String("err", err.Error()))
 
@@ -73,7 +89,10 @@ func (h *AuthHandler) TelegramCallBack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirectSuccess := fmt.Sprintf("meetuper://auth/success?token=%s", token)
+	// Токены уходят в query URL диплинка — экранируем оба (без QueryEscape
+	// url-значимые символы сломали бы разбор ссылки на клиенте).
+	redirectSuccess := fmt.Sprintf("meetuper://auth/success?access_token=%s&refresh_token=%s&expires_in=%d",
+		url.QueryEscape(tokens.AccessToken), url.QueryEscape(tokens.RefreshToken), tokens.ExpiresIn)
 	http.Redirect(w, r, redirectSuccess, http.StatusFound)
 }
 
@@ -118,14 +137,60 @@ func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 		req.Email = "test@example.com" // Дефолтный тестовый юзер
 	}
 
-	token, err := h.service.CreateDevToken(r.Context(), req.Email)
+	tokens, err := h.service.CreateDevToken(r.Context(), req.Email)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]string{
-		"token": token,
-		"note":  "THIS IS A DEV TOKEN! DO NOT USE IN PRODUCTION",
-	})
+	response.JSON(w, http.StatusOK, tokenResponse(tokens))
+}
+
+// Refresh
+// @Summary      Обновить токены
+// @Description  Принимает refresh_token, ротирует его и возвращает новую пару токенов.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body refreshRequest true "Refresh token"
+// @Success      200  {object}  dto.AuthTokensResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Router       /v1/auth/refresh [post]
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+
+	tokens, err := h.service.Refresh(r.Context(), req.RefreshToken)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, tokenResponse(tokens))
+}
+
+// Logout
+// @Summary      Выход
+// @Description  Отзывает переданный refresh_token. Идемпотентно.
+// @Tags         Auth
+// @Accept       json
+// @Param        input body refreshRequest true "Refresh token"
+// @Success      204  "No Content"
+// @Router       /v1/auth/logout [post]
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+
+	if err := h.service.Logout(r.Context(), req.RefreshToken); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

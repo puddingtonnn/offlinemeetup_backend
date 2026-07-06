@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,6 +63,20 @@ type Client struct {
 	presence    *service.PresenceService
 	log         *slog.Logger
 	rooms       []int64
+	// cancel tears this connection down. The hub calls it (on unregister or
+	// shutdown) instead of closing c.send: c.send has multiple senders (hub
+	// broadcasts, sendError, presence snapshot), and closing a channel other
+	// goroutines still send to would panic. Cancelling the ctx makes writePump
+	// exit and close the socket, which unblocks readPump.
+	cancel context.CancelFunc
+}
+
+// stop tears the connection down idempotently. Safe to call from the hub
+// goroutine; nil-safe so hub tests can build a Client without a real ctx.
+func (c *Client) stop() {
+	if c.cancel != nil {
+		c.cancel()
+	}
 }
 
 func (c *Client) readPump(ctx context.Context, cancel context.CancelFunc) {
@@ -139,6 +154,13 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 	case EventUserTyping:
 		var req WSTypingPayload
 		if err := json.Unmarshal(event.Payload, &req); err != nil {
+			return
+		}
+
+		// Печатать можно только в чат, на который клиент подписан при
+		// подключении — иначе клиент мог бы вбросить "X печатает…" в чужую
+		// комнату по произвольному chat_id.
+		if !slices.Contains(c.rooms, req.ChatID) {
 			return
 		}
 
@@ -257,22 +279,26 @@ func (c *Client) sendError(ctx context.Context, requestID, message string) {
 
 func (c *Client) writePump(ctx context.Context, cancel context.CancelFunc) {
 	ticker := time.NewTicker(pingPeriod)
+	// writePump owns the socket: closing it here unblocks readPump's
+	// ReadMessage when teardown was initiated by the hub (cancel), not by a
+	// client-side read error. conn.Close is idempotent, so readPump closing it
+	// too is fine.
 	defer func() {
 		ticker.Stop()
 		cancel()
+		c.conn.Close()
 	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case message, ok := <-c.send:
+			// Teardown: try to send a close frame, then exit. c.send is never
+			// closed (multiple senders), so this ctx signal is the only stop.
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
+			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			return
+		case message := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}

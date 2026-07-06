@@ -32,27 +32,34 @@ func Load[T any](ctx context.Context, c Cache, m Metrics, name, key string, ttl 
 	start := time.Now()
 	raw, found, err := c.Get(ctx, key)
 	m.ObserveLatency(name, "get", time.Since(start))
-	if err != nil {
+	switch {
+	case err != nil:
+		// Сбой бэкенда — это Error, а не Miss: раньше один сбойный Get считался
+		// и как error, и как miss, искажая hit-ratio именно во время инцидента.
 		m.Error(name)
-	}
-	if err == nil && found {
+	case found:
 		var cached T
 		if json.Unmarshal([]byte(raw), &cached) == nil {
 			m.Hit(name)
 			return cached, nil
 		}
-		// Битая запись — трактуем как промах: идём в load и перезапишем её ниже.
+		m.Miss(name) // битая запись — как промах, перезапишем ниже
+	default:
+		m.Miss(name)
 	}
-	m.Miss(name)
 
 	value, err, _ := loadGroup.Do(key, func() (any, error) {
 		v, err := load()
 		if err != nil {
 			return v, err
 		}
-		if data, err := json.Marshal(v); err == nil {
+		// Set идёт на контексте без отмены: иначе отменённый/истёкший запрос-
+		// инициатор подавил бы запись, и кеш переставал бы наполняться именно
+		// под нагрузкой. "null" (nil-указатель от load) не кешируем — иначе
+		// промах-как-хит отравил бы ключ до истечения TTL.
+		if data, err := json.Marshal(v); err == nil && string(data) != "null" {
 			setStart := time.Now()
-			setErr := c.Set(ctx, key, string(data), jitter(ttl)) // best-effort; ошибки логирует реализация
+			setErr := c.Set(context.WithoutCancel(ctx), key, string(data), jitter(ttl)) // best-effort; ошибки логирует реализация
 			m.ObserveLatency(name, "set", time.Since(setStart))
 			if setErr != nil {
 				m.Error(name)

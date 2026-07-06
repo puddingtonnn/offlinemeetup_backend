@@ -180,7 +180,11 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
-	meetupID, _ := strconv.ParseInt(idStr, 10, 64)
+	meetupID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
 
 	var req dto.UpdateMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -222,9 +226,13 @@ func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
-	meetupID, _ := strconv.ParseInt(idStr, 10, 64)
+	meetupID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
 
-	err := h.service.DeleteMeetup(r.Context(), userID, meetupID)
+	err = h.service.DeleteMeetup(r.Context(), userID, meetupID)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
@@ -254,7 +262,11 @@ func (h *MeetupHandler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	idStr := chi.URLParam(r, "id")
-	meetupID, _ := strconv.ParseInt(idStr, 10, 64)
+	meetupID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
 
 	if err := h.service.JoinMeetup(r.Context(), userID, meetupID); err != nil {
 		response.RespondError(w, err, h.log)
@@ -311,7 +323,11 @@ func (h *MeetupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	idStr := chi.URLParam(r, "id")
-	meetupID, _ := strconv.ParseInt(idStr, 10, 64)
+	meetupID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
 
 	if err := h.service.LeaveMeetup(r.Context(), userID, meetupID); err != nil {
 		response.RespondError(w, err, h.log)

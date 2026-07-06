@@ -19,6 +19,12 @@ type Config struct {
 	Env              string
 	DaDataToken      string
 
+	// JWTAccessTTL — время жизни короткого access-токена (JWT_ACCESS_TTL,
+	// дефолт 15m). JWTRefreshTTL — время жизни refresh-токена (JWT_REFRESH_TTL,
+	// дефолт 720h ≈ 30 дней).
+	JWTAccessTTL  time.Duration
+	JWTRefreshTTL time.Duration
+
 	S3Endpoint  string
 	S3Region    string
 	S3Bucket    string
@@ -43,6 +49,12 @@ type Config struct {
 	PresenceTTL time.Duration
 
 	WSAllowedOrigins []string
+
+	// TrustProxyHeaders — доверять X-Real-IP / X-Forwarded-For при вычислении IP
+	// клиента для rate-limit. Включать ТОЛЬКО за доверенным прокси, который сам
+	// перезаписывает эти заголовки; иначе клиент подделает их и получит свежий
+	// бакет на каждый запрос, обойдя лимит. Дефолт false (берём RemoteAddr).
+	TrustProxyHeaders bool
 
 	// MaxUploadSize — максимальный размер загружаемого файла в байтах
 	// (MAX_UPLOAD_SIZE, дефолт 100 MB). Применяется и в хендлере (MaxBytesReader),
@@ -111,6 +123,9 @@ func Load() (*Config, error) {
 	cfg.CacheTTLMeetup = durEnv("CACHE_TTL_MEETUP", 2*time.Minute)
 	cfg.PresenceTTL = durEnv("PRESENCE_TTL", 2*time.Minute)
 	cfg.MaxUploadSize = int64Env("MAX_UPLOAD_SIZE", 100<<20)
+	cfg.TrustProxyHeaders = os.Getenv("TRUST_PROXY_HEADERS") == "true"
+	cfg.JWTAccessTTL = durEnv("JWT_ACCESS_TTL", 15*time.Minute)
+	cfg.JWTRefreshTTL = durEnv("JWT_REFRESH_TTL", 30*24*time.Hour)
 
 	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
 		for _, o := range strings.Split(origins, ",") {

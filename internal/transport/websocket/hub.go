@@ -155,7 +155,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Lock()
 			for _, clients := range h.userClients {
 				for client := range clients {
-					close(client.send)
+					client.stop()
 				}
 			}
 			h.mu.Unlock()
@@ -174,7 +174,7 @@ func (h *Hub) Run(ctx context.Context) {
 			if clients, ok := h.userClients[client.userID]; ok {
 				if _, exists := clients[client]; exists {
 					delete(clients, client)
-					close(client.send)
+					client.stop()
 
 					if len(clients) == 0 {
 						delete(h.userClients, client.userID)

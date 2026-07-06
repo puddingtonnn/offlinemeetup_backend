@@ -26,11 +26,11 @@ return c
 // считая в Redis — счётчик общий для всех инстансов. scope разносит счётчики
 // разных групп эндпоинтов по разным ключам. Лимитер best-effort: ошибка Redis
 // не блокирует запрос (fail-open), чтобы сбой кеша не положил аутентификацию.
-func RateLimiter(rdb *redis.Client, log *slog.Logger, scope string, limit int64, window time.Duration) func(http.Handler) http.Handler {
+func RateLimiter(rdb *redis.Client, log *slog.Logger, scope string, limit int64, window time.Duration, trustProxy bool) func(http.Handler) http.Handler {
 	windowMs := window.Milliseconds()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := "ratelimit:" + scope + ":" + clientIP(r)
+			key := "ratelimit:" + scope + ":" + clientIP(r, trustProxy)
 			count, err := rateLimitScript.Run(r.Context(), rdb, []string{key}, windowMs).Int64()
 			if err != nil {
 				log.Warn("rate limiter: redis error, allowing request", slog.Any("err", err))
@@ -47,16 +47,20 @@ func RateLimiter(rdb *redis.Client, log *slog.Logger, scope string, limit int64,
 	}
 }
 
-// clientIP извлекает IP клиента, доверяя заголовкам прокси (Traefik) перед
-// RemoteAddr. За доверенным прокси X-Real-IP / X-Forwarded-For надёжны; при
-// прямом подключении используется RemoteAddr.
-func clientIP(r *http.Request) string {
-	if xrip := strings.TrimSpace(r.Header.Get("X-Real-IP")); xrip != "" {
-		return xrip
-	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		return strings.TrimSpace(first)
+// clientIP извлекает IP клиента для ключа rate-limit. Заголовкам прокси
+// (X-Real-IP / X-Forwarded-For) доверяем ТОЛЬКО когда trustProxy=true — их может
+// подделать любой клиент, а RemoteAddr подделать нельзя. За доверенным прокси,
+// который сам перезаписывает эти заголовки, они надёжны; при прямом подключении
+// (trustProxy=false) всегда используем RemoteAddr.
+func clientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if xrip := strings.TrimSpace(r.Header.Get("X-Real-IP")); xrip != "" {
+			return xrip
+		}
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			first, _, _ := strings.Cut(xff, ",")
+			return strings.TrimSpace(first)
+		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

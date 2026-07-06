@@ -65,8 +65,8 @@ func (r *ChatRepo) GetUserChats(ctx context.Context, userID int64) ([]domain.Cha
 	var chats []domain.Chat
 	err := r.db.NewSelect().Model(&chats).
 		ColumnExpr("chat.*").
-		ColumnExpr("(SELECT content FROM messages m2 WHERE m2.chat_id = chat.id ORDER BY m2.created_at DESC LIMIT 1) AS last_message_text").
-		ColumnExpr("(SELECT COUNT(id) FROM messages m2 WHERE m2.chat_id = chat.id AND m2.id > cp.last_read_message_id ) AS unread_count").
+		ColumnExpr("(SELECT content FROM messages m2 WHERE m2.chat_id = chat.id AND m2.deleted_at IS NULL ORDER BY m2.created_at DESC LIMIT 1) AS last_message_text").
+		ColumnExpr("(SELECT COUNT(id) FROM messages m2 WHERE m2.chat_id = chat.id AND m2.id > cp.last_read_message_id AND m2.deleted_at IS NULL) AS unread_count").
 		Relation("Meetup").
 		Relation("Meetup.Creator").
 		Relation("Meetup.Creator.Profile").
@@ -175,6 +175,26 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 		}
 		if !owned {
 			return nil, nil, ErrFileNotOwned
+		}
+	}
+
+	// Ответ должен ссылаться на сообщение ИЗ ТОГО ЖЕ чата. Иначе через
+	// reply_to_message_id можно вытащить превью чужого приватного сообщения:
+	// messageByID грузит связь ReplyTo без фильтра по чату/членству, и превью
+	// (ReplyTo.Content) ушло бы участникам этого чата. Проверяем в той же
+	// транзакции; чужой/несуществующий id неотличим — оба дают "not found".
+	if msg.ReplyToMessageID != nil {
+		var parentChatID int64
+		err = tx.NewSelect().
+			Table("messages").
+			Column("chat_id").
+			Where("id = ?", *msg.ReplyToMessageID).
+			Scan(ctx, &parentChatID)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && parentChatID != msg.ChatID) {
+			return nil, nil, ErrMessageNotFound
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("checking reply target: %w", err)
 		}
 	}
 

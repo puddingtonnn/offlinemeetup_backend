@@ -47,7 +47,7 @@ func computeTelegramHash(botToken string, params url.Values) string {
 
 func TestAuthService_validateTelegramHash(t *testing.T) {
 	cfg := &config.Config{TelegramBotToken: "bot-token"}
-	srv := NewAuthService(nil, cfg)
+	srv := NewAuthService(nil, nil, cfg)
 
 	baseParams := func() url.Values {
 		p := url.Values{}
@@ -90,7 +90,12 @@ func TestAuthService_validateTelegramHash(t *testing.T) {
 
 func TestAuthService_LoginTelegram(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{TelegramBotToken: "bot-token", JWTSecret: "secret"}
+	cfg := &config.Config{
+		TelegramBotToken: "bot-token",
+		JWTSecret:        "secret",
+		JWTAccessTTL:     15 * time.Minute,
+		JWTRefreshTTL:    24 * time.Hour,
+	}
 
 	params := url.Values{}
 	params.Set("id", "555")
@@ -101,7 +106,8 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		repo := mocks.NewMockAuthRepository(ctrl)
-		srv := NewAuthService(repo, cfg)
+		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+		srv := NewAuthService(repo, refresh, cfg)
 
 		p := url.Values{}
 		for k, v := range params {
@@ -110,17 +116,20 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		p.Set("hash", computeTelegramHash("bot-token", p))
 
 		repo.EXPECT().GetBySocialID(ctx, "telegram", "555").Return(&domain.User{ID: 7}, nil)
+		refresh.EXPECT().Create(ctx, gomock.Any()).Return(nil)
 
-		token, err := srv.LoginTelegram(ctx, p)
+		tokens, err := srv.LoginTelegram(ctx, p)
 		assert.NoError(t, err)
-		assert.NotEmpty(t, token)
+		assert.NotNil(t, tokens)
+		assert.NotEmpty(t, tokens.AccessToken)
+		assert.NotEmpty(t, tokens.RefreshToken)
 	})
 
 	t.Run("invalid hash rejected without repo call", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		repo := mocks.NewMockAuthRepository(ctrl)
-		srv := NewAuthService(repo, cfg)
+		srv := NewAuthService(repo, nil, cfg)
 
 		p := url.Values{}
 		for k, v := range params {
@@ -128,16 +137,16 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		}
 		p.Set("hash", "deadbeef")
 
-		token, err := srv.LoginTelegram(ctx, p)
+		tokens, err := srv.LoginTelegram(ctx, p)
 		assert.Error(t, err)
-		assert.Empty(t, token)
+		assert.Nil(t, tokens)
 	})
 
 	t.Run("expired auth_date rejected (replay protection)", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		repo := mocks.NewMockAuthRepository(ctrl)
-		srv := NewAuthService(repo, cfg)
+		srv := NewAuthService(repo, nil, cfg)
 
 		p := url.Values{}
 		p.Set("id", "555")
@@ -147,9 +156,9 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		p.Set("hash", computeTelegramHash("bot-token", p))
 
 		// Хэш валиден, но данные просрочены => репозиторий не вызывается.
-		token, err := srv.LoginTelegram(ctx, p)
+		tokens, err := srv.LoginTelegram(ctx, p)
 		assert.Error(t, err)
-		assert.Empty(t, token)
+		assert.Nil(t, tokens)
 	})
 }
 
@@ -158,8 +167,9 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 	defer ctrl.Finish()
 
 	repo := mocks.NewMockAuthRepository(ctrl)
-	cfg := &config.Config{JWTSecret: "test_secret"}
-	srv := NewAuthService(repo, cfg)
+	refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+	cfg := &config.Config{JWTSecret: "test_secret", JWTAccessTTL: 15 * time.Minute, JWTRefreshTTL: 24 * time.Hour}
+	srv := NewAuthService(repo, refresh, cfg)
 
 	ctx := context.Background()
 	email := "dev@test.com"
@@ -174,13 +184,15 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 		repo.EXPECT().
 			GetBySocialID(ctx, "dev_local", dummySocialID).
 			Return(existingUser, nil)
+		refresh.EXPECT().Create(ctx, gomock.Any()).Return(nil)
 
-		token, err := srv.CreateDevToken(ctx, email)
+		tokens, err := srv.CreateDevToken(ctx, email)
 		assert.NoError(t, err)
-		assert.NotEmpty(t, token)
+		assert.NotNil(t, tokens)
+		assert.NotEmpty(t, tokens.RefreshToken)
 
-		// Verify token
-		parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		// Verify access token
+		parsedToken, err := jwt.Parse(tokens.AccessToken, func(token *jwt.Token) (interface{}, error) {
 			return []byte(cfg.JWTSecret), nil
 		})
 		assert.NoError(t, err)
@@ -203,13 +215,14 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 		repo.EXPECT().
 			CreateUserWithSocial(ctx, gomock.Any(), "dev_local", dummySocialID, gomock.Any()).
 			Return(newUser, nil)
+		refresh.EXPECT().Create(ctx, gomock.Any()).Return(nil)
 
-		token, err := srv.CreateDevToken(ctx, email)
+		tokens, err := srv.CreateDevToken(ctx, email)
 		assert.NoError(t, err)
-		assert.NotEmpty(t, token)
+		assert.NotNil(t, tokens)
 
-		// Verify token
-		parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		// Verify access token
+		parsedToken, err := jwt.Parse(tokens.AccessToken, func(token *jwt.Token) (interface{}, error) {
 			return []byte(cfg.JWTSecret), nil
 		})
 		assert.NoError(t, err)
@@ -225,9 +238,9 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 			GetBySocialID(ctx, "dev_local", dummySocialID).
 			Return(nil, repoErr)
 
-		token, err := srv.CreateDevToken(ctx, email)
+		tokens, err := srv.CreateDevToken(ctx, email)
 		assert.ErrorIs(t, err, repoErr)
-		assert.Empty(t, token)
+		assert.Nil(t, tokens)
 	})
 
 	t.Run("repo_error_create", func(t *testing.T) {
@@ -240,9 +253,9 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 			CreateUserWithSocial(ctx, gomock.Any(), "dev_local", dummySocialID, gomock.Any()).
 			Return(nil, repoErr)
 
-		token, err := srv.CreateDevToken(ctx, email)
+		tokens, err := srv.CreateDevToken(ctx, email)
 		assert.ErrorIs(t, err, repoErr)
-		assert.Empty(t, token)
+		assert.Nil(t, tokens)
 	})
 }
 
@@ -269,7 +282,7 @@ func TestAuthService_IsActive(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			repo := mocks.NewMockAuthRepository(ctrl)
-			srv := NewAuthService(repo, cfg)
+			srv := NewAuthService(repo, nil, cfg)
 
 			repo.EXPECT().GetByID(ctx, int64(1)).Return(tt.user, tt.repoErr)
 
@@ -290,7 +303,7 @@ func TestAuthService_GetCurrentUser(t *testing.T) {
 
 	repo := mocks.NewMockAuthRepository(ctrl)
 	cfg := &config.Config{}
-	srv := NewAuthService(repo, cfg)
+	srv := NewAuthService(repo, nil, cfg)
 
 	ctx := context.Background()
 
@@ -331,5 +344,100 @@ func TestAuthService_GetCurrentUser(t *testing.T) {
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "fetching user")
 		assert.Nil(t, resp)
+	})
+}
+
+func TestAuthService_Refresh(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{JWTSecret: "secret", JWTAccessTTL: 15 * time.Minute, JWTRefreshTTL: 24 * time.Hour}
+
+	t.Run("valid token rotates: revoke old + issue new pair", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+		srv := NewAuthService(nil, refresh, cfg)
+
+		stored := &domain.RefreshToken{ID: 5, UserID: 7, ExpiresAt: time.Now().Add(time.Hour)}
+		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(stored, nil)
+		refresh.EXPECT().Revoke(ctx, int64(5)).Return(nil)
+		refresh.EXPECT().Create(ctx, gomock.Any()).Return(nil)
+
+		tokens, err := srv.Refresh(ctx, "raw-refresh-token")
+		assert.NoError(t, err)
+		assert.NotNil(t, tokens)
+		assert.NotEmpty(t, tokens.AccessToken)
+		assert.NotEmpty(t, tokens.RefreshToken)
+	})
+
+	t.Run("unknown token is unauthorized", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+		srv := NewAuthService(nil, refresh, cfg)
+
+		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(nil, nil)
+
+		tokens, err := srv.Refresh(ctx, "nope")
+		assert.ErrorIs(t, err, ErrUnauthorized)
+		assert.Nil(t, tokens)
+	})
+
+	t.Run("revoked token triggers reuse-detection (revoke all)", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+		srv := NewAuthService(nil, refresh, cfg)
+
+		revokedAt := time.Now().Add(-time.Minute)
+		stored := &domain.RefreshToken{ID: 5, UserID: 7, ExpiresAt: time.Now().Add(time.Hour), RevokedAt: &revokedAt}
+		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(stored, nil)
+		refresh.EXPECT().RevokeAllForUser(ctx, int64(7)).Return(nil)
+
+		tokens, err := srv.Refresh(ctx, "reused")
+		assert.ErrorIs(t, err, ErrUnauthorized)
+		assert.Nil(t, tokens)
+	})
+
+	t.Run("expired token is unauthorized", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+		srv := NewAuthService(nil, refresh, cfg)
+
+		stored := &domain.RefreshToken{ID: 5, UserID: 7, ExpiresAt: time.Now().Add(-time.Hour)}
+		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(stored, nil)
+
+		tokens, err := srv.Refresh(ctx, "old")
+		assert.ErrorIs(t, err, ErrUnauthorized)
+		assert.Nil(t, tokens)
+	})
+}
+
+func TestAuthService_Logout(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{}
+
+	t.Run("revokes a live token", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+		srv := NewAuthService(nil, refresh, cfg)
+
+		stored := &domain.RefreshToken{ID: 9, UserID: 3}
+		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(stored, nil)
+		refresh.EXPECT().Revoke(ctx, int64(9)).Return(nil)
+
+		assert.NoError(t, srv.Logout(ctx, "tok"))
+	})
+
+	t.Run("unknown token is an idempotent no-op", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
+		srv := NewAuthService(nil, refresh, cfg)
+
+		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(nil, nil)
+
+		assert.NoError(t, srv.Logout(ctx, "whatever"))
 	})
 }

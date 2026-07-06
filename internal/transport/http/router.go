@@ -51,9 +51,11 @@ func NewRouter(authHandler *handler.AuthHandler,
 	router.Route("/v1", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			// Брутфорс/перебор по логину и колбэкам — ограничиваем по IP.
-			r.Use(authMiddleware.RateLimiter(rdb, log, "auth", 20, time.Minute))
+			r.Use(authMiddleware.RateLimiter(rdb, log, "auth", 20, time.Minute, cfg.TrustProxyHeaders))
 
 			r.Post("/auth/google", authHandler.GoogleLogin)
+			r.Post("/auth/refresh", authHandler.Refresh)
+			r.Post("/auth/logout", authHandler.Logout)
 			r.Route("/auth/telegram", func(r chi.Router) {
 				r.Get("/login", authHandler.ServeTelegramLoginPage)
 				r.Get("/callback", authHandler.TelegramCallBack)
@@ -95,7 +97,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 			})
 			r.Get("/geo/suggest", geoHandler.Suggest)
 
-			r.With(authMiddleware.RateLimiter(rdb, log, "upload", 30, time.Minute)).
+			r.With(authMiddleware.RateLimiter(rdb, log, "upload", 30, time.Minute, cfg.TrustProxyHeaders)).
 				Post("/files/upload", fileHandler.Upload)
 		})
 

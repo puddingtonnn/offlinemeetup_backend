@@ -67,8 +67,14 @@ func (s *RedisPresenceStore) Refresh(ctx context.Context, userID int64, ttl time
 	return nil
 }
 
+// lastSeenTTL bounds how long an offline user's last_seen is retained. Without
+// it (TTL 0 = never expires) the keyspace grows forever — one immortal key per
+// user who ever disconnected. A stale last_seen past this horizon is not useful
+// to show anyway.
+const lastSeenTTL = 90 * 24 * time.Hour
+
 func (s *RedisPresenceStore) SetLastSeen(ctx context.Context, userID int64, ts time.Time) error {
-	if err := s.rdb.Set(ctx, PresenceLastSeenKey(userID), ts.Unix(), 0).Err(); err != nil {
+	if err := s.rdb.Set(ctx, PresenceLastSeenKey(userID), ts.Unix(), lastSeenTTL).Err(); err != nil {
 		return fmt.Errorf("presence set last seen: %w", err)
 	}
 	return nil
