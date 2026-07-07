@@ -123,11 +123,19 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 			return
 		}
 
+		// request_id живёт на конверте события и служит idempotency-ключом:
+		// повторная отправка того же события не создаст дубль (см. SaveMessage).
+		var reqID *string
+		if event.RequestID != "" {
+			id := event.RequestID
+			reqID = &id
+		}
+
 		go func() {
 			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
-			resp, targetIDs, err := c.chatService.SendMessage(timeoutCtx, req.ChatID, c.userID, req.Content, req.ReplyToMessageID, req.FileID)
+			resp, targetIDs, created, err := c.chatService.SendMessage(timeoutCtx, req.ChatID, c.userID, req.Content, req.ReplyToMessageID, req.FileID, reqID)
 			if err != nil {
 				c.log.Error("failed to send message via WS", slog.Any("err", err))
 				c.sendError(ctx, event.RequestID, wsErrorMessage(err))
@@ -148,7 +156,14 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 			}
 
 			finalData, _ := json.Marshal(responseEvent)
-			c.hub.BroadcastToUsers(targetIDs, finalData)
+			// Новое сообщение — всем участникам; идемпотентный повтор — только
+			// отправителю (его optimistic-UI ждёт подтверждения, а остальные
+			// уже получили сообщение при первой отправке).
+			if created {
+				c.hub.BroadcastToUsers(targetIDs, finalData)
+			} else {
+				c.hub.BroadcastToUsers([]int64{c.userID}, finalData)
+			}
 		}()
 
 	case EventUserTyping:

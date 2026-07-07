@@ -135,12 +135,47 @@ func (r *ChatRepo) GetMessages(ctx context.Context, userID, chatID, cursor int64
 	return messages, nil
 }
 
-func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error) {
+// SaveMessage persists a message and returns it, the chat's participant IDs for
+// broadcast, and whether it was newly created. When msg.RequestID is set it is
+// idempotent: a repeated (sender_id, request_id) does not insert a duplicate but
+// returns the already-stored message with created=false. The de-dup is atomic
+// (INSERT ... ON CONFLICT DO NOTHING against a unique index), not a check-then-
+// act, so two concurrent retries can't both slip through.
+func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	defer tx.Rollback()
+
+	// Идемпотентность: если сообщение с этим ключом уже создано — возвращаем его,
+	// НЕ перепроверяя read-only/членство заново (они выполнялись при создании) и
+	// не создавая дубль. Так ретрай после смены состояния чата (стал read-only,
+	// вышел из чата) всё равно вернёт оригинал, а не ошибку. Коммитнутую строку
+	// видно без гонки; гонку конкурентных НОВЫХ вставок ловит ON CONFLICT ниже.
+	if msg.RequestID != nil {
+		var existingID int64
+		err := tx.NewSelect().Table("messages").Column("id").
+			Where("chat_id = ? AND sender_id = ? AND request_id = ?", msg.ChatID, msg.SenderID, *msg.RequestID).
+			Scan(ctx, &existingID)
+		if err == nil {
+			targetIDs, err := participantIDs(ctx, tx, msg.ChatID)
+			if err != nil {
+				return nil, nil, false, err
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, nil, false, fmt.Errorf("failed to commit transaction: %w", err)
+			}
+			loaded, err := r.messageByID(ctx, existingID)
+			if err != nil {
+				return nil, nil, false, fmt.Errorf("failed to load message after save: %w", err)
+			}
+			return loaded, targetIDs, false, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, false, fmt.Errorf("checking idempotent message: %w", err)
+		}
+	}
 
 	var isReadOnly bool
 	err = tx.NewSelect().
@@ -149,10 +184,10 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 		Where("id = ?", msg.ChatID).
 		Scan(ctx, &isReadOnly)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to check chat status: %w", err)
+		return nil, nil, false, fmt.Errorf("failed to check chat status: %w", err)
 	}
 	if isReadOnly && msg.SenderID != 0 { // Allow system messages (SenderID=0)
-		return nil, nil, ErrChatReadOnly
+		return nil, nil, false, ErrChatReadOnly
 	}
 
 	exists, err := tx.NewSelect().
@@ -160,10 +195,10 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 		Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).
 		Exists(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("checking if chat_participants exists failed: %w", err)
+		return nil, nil, false, fmt.Errorf("checking if chat_participants exists failed: %w", err)
 	}
 	if !exists {
-		return nil, nil, ErrNotChatMember
+		return nil, nil, false, ErrNotChatMember
 	}
 
 	// Вложение должно принадлежать отправителю — нельзя приложить чужой файл по
@@ -171,10 +206,10 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 	if msg.FileID.Valid {
 		owned, err := fileOwnedBy(ctx, tx, msg.FileID.UUID, msg.SenderID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		if !owned {
-			return nil, nil, ErrFileNotOwned
+			return nil, nil, false, ErrFileNotOwned
 		}
 	}
 
@@ -191,40 +226,72 @@ func (r *ChatRepo) SaveMessage(ctx context.Context, msg *domain.Message) (*domai
 			Where("id = ?", *msg.ReplyToMessageID).
 			Scan(ctx, &parentChatID)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && parentChatID != msg.ChatID) {
-			return nil, nil, ErrMessageNotFound
+			return nil, nil, false, ErrMessageNotFound
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("checking reply target: %w", err)
+			return nil, nil, false, fmt.Errorf("checking reply target: %w", err)
 		}
 	}
 
-	_, err = tx.NewInsert().Model(msg).Returning("id, created_at").Exec(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to insert message: %w", err)
+	created := true
+	if msg.RequestID != nil {
+		// Pre-SELECT выше не нашёл строку, но два конкурентных НОВЫХ ретрая могли
+		// дойти сюда одновременно. ON CONFLICT DO NOTHING атомарен на уровне БД:
+		// один вставит, второй получит 0 строк. Ключ включает chat_id, поэтому
+		// тот же request_id в другом чате — это отдельное сообщение, не дубль.
+		res, err := tx.NewInsert().Model(msg).
+			On("CONFLICT (chat_id, sender_id, request_id) WHERE request_id IS NOT NULL DO NOTHING").
+			Exec(ctx)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("failed to insert message: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return nil, nil, false, err
+		}
+		created = n > 0
+
+		// После INSERT ... ON CONFLICT строка гарантированно существует (вставили
+		// мы или конкурент). Достаём её id по уникальному ключу в любом случае.
+		var existingID int64
+		if err := tx.NewSelect().Table("messages").Column("id").
+			Where("chat_id = ? AND sender_id = ? AND request_id = ?", msg.ChatID, msg.SenderID, *msg.RequestID).
+			Scan(ctx, &existingID); err != nil {
+			return nil, nil, false, fmt.Errorf("loading idempotent message id: %w", err)
+		}
+		msg.ID = existingID
+	} else {
+		if _, err = tx.NewInsert().Model(msg).Returning("id, created_at").Exec(ctx); err != nil {
+			return nil, nil, false, fmt.Errorf("failed to insert message: %w", err)
+		}
 	}
 
-	_, err = tx.NewUpdate().Table("chat_participants").Set("last_read_message_id = ?", msg.ID).
-		Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).
-		Exec(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to update sender read status: %w", err)
+	// Счётчик прочитанного двигаем только для НОВОГО сообщения; на дубле это уже
+	// сделано при первой отправке.
+	if created {
+		_, err = tx.NewUpdate().Table("chat_participants").Set("last_read_message_id = ?", msg.ID).
+			Where("chat_id = ? AND user_id = ?", msg.ChatID, msg.SenderID).
+			Exec(ctx)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("failed to update sender read status: %w", err)
+		}
 	}
 
 	targetIDs, err := participantIDs(ctx, tx, msg.ChatID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, nil, fmt.Errorf("failed to commit transaction: %w", err)
+		return nil, nil, false, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	loaded, err := r.messageByID(ctx, msg.ID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load message after save: %w", err)
+		return nil, nil, false, fmt.Errorf("failed to load message after save: %w", err)
 	}
 
-	return loaded, targetIDs, nil
+	return loaded, targetIDs, created, nil
 }
 
 // EditMessage updates a message's content (and stamps edited_at) only if the

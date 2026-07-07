@@ -20,7 +20,7 @@ type ChatRepository interface {
 	GetChatByMeetupID(ctx context.Context, tx bun.IDB, meetupID int64) (*domain.Chat, error)
 	GetUserChats(ctx context.Context, userID int64) ([]domain.Chat, error)
 	GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]domain.Message, error)
-	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error)
+	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error)
 	EditMessage(ctx context.Context, chatID, msgID, editorID int64, content string) (*domain.Message, []int64, error)
 	DeleteMessage(ctx context.Context, chatID, msgID, editorID int64) (int64, []int64, error)
 	MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) error
@@ -75,13 +75,30 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor in
 	return dtos, nil
 }
 
-func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string, replyToMessageID *int64, fileID *string) (*dto.MessageResponse, []int64, error) {
+// SendMessage persists a message and returns the DTO, the broadcast target IDs,
+// and whether it was newly created. requestID is an optional client idempotency
+// key: a repeat with the same key returns the original message with created=false
+// instead of inserting a duplicate (see repo.SaveMessage).
+func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string, replyToMessageID *int64, fileID *string, requestID *string) (*dto.MessageResponse, []int64, bool, error) {
 	content = strings.TrimSpace(content)
+
+	// Пустой request_id — это отсутствие ключа, а не ключ "". Нормализуем в nil,
+	// чтобы не индексировать "" и не схлопывать разные сообщения с пустым ключом
+	// в один (REST мог прислать &"" — WS уже отдаёт nil).
+	if requestID != nil && *requestID == "" {
+		requestID = nil
+	}
+	// request_id идёт в btree unique-индекс; чрезмерно длинное значение упало бы
+	// на INSERT ошибкой размера индексной записи (→ 500). Отклоняем заранее.
+	// UUID — 36 символов; 128 с запасом.
+	if requestID != nil && len(*requestID) > 128 {
+		return nil, nil, false, fmt.Errorf("request_id too long: %w", ErrInvalidInput)
+	}
 
 	hasAttachment := fileID != nil && *fileID != ""
 	// With an attachment the text (caption) may be empty; without one it may not.
 	if err := validateMessageContent(content, hasAttachment); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	msg := &domain.Message{
@@ -90,27 +107,30 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 		Content:          content,
 		MessageType:      "text",
 		ReplyToMessageID: replyToMessageID,
+		RequestID:        requestID,
 	}
 
 	if hasAttachment {
 		id, err := uuid.Parse(*fileID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid file id: %w", ErrInvalidInput)
+			return nil, nil, false, fmt.Errorf("invalid file id: %w", ErrInvalidInput)
 		}
 		msg.FileID = uuid.NullUUID{UUID: id, Valid: true}
 		msg.MessageType = "file" // precise kind is carried by attachment.mime_type
 	}
 
-	savedMsg, targetIDs, err := s.repo.SaveMessage(ctx, msg)
+	savedMsg, targetIDs, created, err := s.repo.SaveMessage(ctx, msg)
 	if err != nil {
-		return nil, nil, mapChatRepoError(err)
+		return nil, nil, false, mapChatRepoError(err)
 	}
 
 	// Best-effort: a stale cache must not fail an already-saved message; the
 	// cache layer logs any failure.
-	_ = s.cache.InvalidateUserChatsMany(ctx, targetIDs...)
+	if created {
+		_ = s.cache.InvalidateUserChatsMany(ctx, targetIDs...)
+	}
 
-	return s.mapMessageToResponse(savedMsg), targetIDs, nil
+	return s.mapMessageToResponse(savedMsg), targetIDs, created, nil
 }
 
 // EditMessage updates an existing message's text. Only the author may edit, and
@@ -196,6 +216,7 @@ func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageRespon
 		MessageType: m.MessageType,
 		Attachment:  attachment,
 		ReplyTo:     mapMessagePreview(m.ReplyTo),
+		RequestID:   m.RequestID,
 		EditedAt:    m.EditedAt,
 		IsDeleted:   isDeleted,
 		CreatedAt:   m.CreatedAt,

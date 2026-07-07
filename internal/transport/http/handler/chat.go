@@ -149,6 +149,9 @@ type SendMessageRequest struct {
 	Content          string  `json:"content" example:"Привет, как дела?"`
 	ReplyToMessageID *int64  `json:"reply_to_message_id,omitempty" example:"42"`
 	FileID           *string `json:"file_id,omitempty" example:"6f5e4d3c-2b1a-..."`
+	// RequestID — клиентский idempotency key (UUID). Повторный POST с тем же
+	// request_id не создаёт дубль, а возвращает уже созданное сообщение (200).
+	RequestID *string `json:"request_id,omitempty" example:"a1b2c3d4-..."`
 }
 
 type EditMessageRequest struct {
@@ -189,15 +192,22 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, targetIDs, err := h.service.SendMessage(r.Context(), chatID, userID, req.Content, req.ReplyToMessageID, req.FileID)
+	msg, targetIDs, created, err := h.service.SendMessage(r.Context(), chatID, userID, req.Content, req.ReplyToMessageID, req.FileID, req.RequestID)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
 	}
 
-	go h.broadcastMessageEvent(websocket.EventNewMessage, msg, targetIDs)
+	// Идемпотентный повтор (тот же request_id): сообщение уже создано — не
+	// рассылаем его снова и отвечаем 200 с существующим вместо 201.
+	status := http.StatusCreated
+	if created {
+		go h.broadcastMessageEvent(websocket.EventNewMessage, msg, targetIDs)
+	} else {
+		status = http.StatusOK
+	}
 
-	response.JSON(w, http.StatusCreated, msg)
+	response.JSON(w, status, msg)
 }
 
 // EditMessage

@@ -192,13 +192,14 @@ func (mr *MockChatRepositoryMockRecorder) MarkAsRead(ctx, chatID, userID, lastRe
 }
 
 // SaveMessage mocks base method.
-func (m *MockChatRepository) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error) {
+func (m *MockChatRepository) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SaveMessage", ctx, msg)
 	ret0, _ := ret[0].(*domain.Message)
 	ret1, _ := ret[1].([]int64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret2, _ := ret[2].(bool)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
 // SaveMessage indicates an expected call of SaveMessage.
