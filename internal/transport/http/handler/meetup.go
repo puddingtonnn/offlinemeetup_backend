@@ -7,12 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
-
 	"github.com/go-chi/chi/v5"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 )
 
 type MeetupHandler struct {
@@ -35,9 +34,8 @@ func NewMeetupHandler(service *service.MeetupService, log *slog.Logger) *MeetupH
 // @Failure 400 {object} response.ErrorResponse
 // @Router /v1/meetups [post]
 func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -72,11 +70,8 @@ func (h *MeetupHandler) CreateMeetup(w http.ResponseWriter, r *http.Request) {
 // @Failure     404  {object}  response.ErrorResponse
 // @Router      /v1/meetups/{id} [get]
 func (h *MeetupHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-
-	if err != nil {
-		response.RespondError(w, service.ErrInvalidInput, h.log)
+	id, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -127,8 +122,7 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 	var tagIDs []int64
 
 	if tagsStr != "" {
-		parts := strings.Split(tagsStr, ",")
-		for _, p := range parts {
+		for p := range strings.SplitSeq(tagsStr, ",") {
 			id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
 			if err == nil && id > 0 {
 				tagIDs = append(tagIDs, id)
@@ -173,16 +167,13 @@ func (h *MeetupHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure     404    {object}  response.ErrorResponse
 // @Router      /v1/meetups/{id} [patch]
 func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-	meetupID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, service.ErrInvalidInput, h.log)
+	meetupID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -219,21 +210,17 @@ func (h *MeetupHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Failure     404  {object}  response.ErrorResponse
 // @Router      /v1/meetups/{id} [delete]
 func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-	meetupID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, service.ErrInvalidInput, h.log)
+	meetupID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
-	err = h.service.DeleteMeetup(r.Context(), userID, meetupID)
-	if err != nil {
+	if err := h.service.DeleteMeetup(r.Context(), userID, meetupID); err != nil {
 		response.RespondError(w, err, h.log)
 		return
 	}
@@ -256,15 +243,12 @@ func (h *MeetupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // @Failure      500  {object}  response.ErrorResponse
 // @Router       /v1/meetups/{id}/join [post]
 func (h *MeetupHandler) Join(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
-	idStr := chi.URLParam(r, "id")
-	meetupID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, service.ErrInvalidInput, h.log)
+	meetupID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -288,9 +272,8 @@ func (h *MeetupHandler) Join(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  response.ErrorResponse
 // @Router       /v1/meetups/join/{token} [post]
 func (h *MeetupHandler) JoinByToken(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -317,15 +300,12 @@ func (h *MeetupHandler) JoinByToken(w http.ResponseWriter, r *http.Request) {
 // @Failure      500  {object}  response.ErrorResponse
 // @Router       /v1/meetups/{id}/leave [post]
 func (h *MeetupHandler) Leave(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
-	idStr := chi.URLParam(r, "id")
-	meetupID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, service.ErrInvalidInput, h.log)
+	meetupID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -350,9 +330,8 @@ func (h *MeetupHandler) Leave(w http.ResponseWriter, r *http.Request) {
 // @Failure      401  {object}  response.ErrorResponse
 // @Router       /v1/meetups/my [get]
 func (h *MeetupHandler) My(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 	query := r.URL.Query()

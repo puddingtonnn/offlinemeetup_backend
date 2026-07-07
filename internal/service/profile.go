@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
 type ProfileRepository interface {
@@ -108,9 +108,12 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dt
 			existingProfile.AvatarFileID = uuid.NullUUID{}
 		} else {
 			id, err := uuid.Parse(*req.AvatarFileID)
-			if err == nil {
-				existingProfile.AvatarFileID = uuid.NullUUID{UUID: id, Valid: true}
+			if err != nil {
+				// Зеркалим cover_file_id в meetup-сервисе: кривой UUID — это 400, а
+				// не тихий no-op, иначе клиент думает, что аватар выставлен.
+				return nil, fmt.Errorf("invalid avatar_file_id: %w", ErrInvalidInput)
 			}
+			existingProfile.AvatarFileID = uuid.NullUUID{UUID: id, Valid: true}
 		}
 	}
 

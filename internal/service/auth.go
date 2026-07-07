@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"google.golang.org/api/idtoken"
 )
 
@@ -123,7 +123,7 @@ func (s *AuthService) validateTelegramHash(params url.Values) bool {
 		return false
 	}
 
-	var keys []string
+	keys := make([]string, 0, len(params))
 	for k := range params {
 		if k == "hash" {
 			continue
@@ -131,9 +131,9 @@ func (s *AuthService) validateTelegramHash(params url.Values) bool {
 		keys = append(keys, k)
 	}
 
-	sort.Strings(keys)
+	slices.Sort(keys)
 
-	var parts []string
+	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		parts = append(parts, fmt.Sprintf("%s=%s", k, params.Get(k)))
 	}

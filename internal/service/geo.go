@@ -2,13 +2,14 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 const (
@@ -25,29 +26,29 @@ func NewGeoService(apiKey string) *GeoService {
 	return &GeoService{apiKey: apiKey, client: &http.Client{Timeout: 5 * time.Second}}
 }
 
-func (s *GeoService) SuggestAddress(query string) ([]dto.AddressSuggestion, error) {
-	reqBody := map[string]interface{}{
+func (s *GeoService) SuggestAddress(ctx context.Context, query string) ([]dto.AddressSuggestion, error) {
+	reqBody := map[string]any{
 		"query": query,
 		"count": 10,
 	}
 
-	return s.sendRequest(daDataSuggestURL, reqBody)
+	return s.sendRequest(ctx, daDataSuggestURL, reqBody)
 }
 
-func (s *GeoService) SuggestByGeo(lat, lon float64) ([]dto.AddressSuggestion, error) {
-	reqBody := map[string]interface{}{
+func (s *GeoService) SuggestByGeo(ctx context.Context, lat, lon float64) ([]dto.AddressSuggestion, error) {
+	reqBody := map[string]any{
 		"lat":           lat,
 		"lon":           lon,
 		"count":         5,
 		"radius_meters": 100,
 	}
-	return s.sendRequest(daDataGeoLocateURL, reqBody)
+	return s.sendRequest(ctx, daDataGeoLocateURL, reqBody)
 }
 
-func (s *GeoService) sendRequest(url string, bodyData interface{}) ([]dto.AddressSuggestion, error) {
+func (s *GeoService) sendRequest(ctx context.Context, url string, bodyData any) ([]dto.AddressSuggestion, error) {
 	jsonBody, _ := json.Marshal(bodyData)
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
 	}

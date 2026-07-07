@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 )
 
@@ -48,11 +48,11 @@ func (h *GeoHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		suggestions, err = h.service.SuggestByGeo(lat, lon)
+		suggestions, err = h.service.SuggestByGeo(r.Context(), lat, lon)
 	} else if len(addressPart) >= 2 {
-		suggestions, err = h.service.SuggestAddress(addressPart)
+		suggestions, err = h.service.SuggestAddress(r.Context(), addressPart)
 	} else {
-		response.JSON(w, http.StatusOK, []interface{}{})
+		response.JSON(w, http.StatusOK, []any{})
 		return
 	}
 

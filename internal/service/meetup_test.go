@@ -15,9 +15,9 @@ import (
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo/mocks"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
 func setupMeetupTest(t *testing.T) (*miniredis.Miniredis, *redis.Client, *mocks.MockMeetupRepository, *MeetupService) {
@@ -177,8 +177,8 @@ func TestMeetupService_GetMeetup(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, mr.Exists(cache.MeetupKey(meetupID)))
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(&domain.Meetup{
-			ID: meetupID, IsPublic: true, Status: "active", EndTime: time.Now().Add(time.Hour),
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(&repo.MeetupAuth{
+			IsPublic: true, Status: "active", EndTime: time.Now().Add(time.Hour),
 		}, nil)
 		mockRepo.EXPECT().Join(ctx, meetupID, userID).Return(nil)
 
@@ -192,9 +192,8 @@ func TestMeetupService_JoinMeetup(t *testing.T) {
 	meetupID := int64(100)
 	userID := int64(1)
 
-	activePublic := func() *domain.Meetup {
-		return &domain.Meetup{
-			ID:       meetupID,
+	activePublic := func() *repo.MeetupAuth {
+		return &repo.MeetupAuth{
 			IsPublic: true,
 			Status:   "active",
 			EndTime:  time.Now().Add(time.Hour),
@@ -206,7 +205,7 @@ func TestMeetupService_JoinMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(activePublic(), nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(activePublic(), nil)
 		mockRepo.EXPECT().Join(ctx, meetupID, userID).Return(nil)
 
 		err := svc.JoinMeetup(ctx, userID, meetupID)
@@ -217,7 +216,7 @@ func TestMeetupService_JoinMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(nil, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(nil, nil)
 
 		err := svc.JoinMeetup(ctx, userID, meetupID)
 		require.ErrorIs(t, err, ErrNotFound)
@@ -229,7 +228,7 @@ func TestMeetupService_JoinMeetup(t *testing.T) {
 
 		m := activePublic()
 		m.IsPublic = false
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(m, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(m, nil)
 
 		err := svc.JoinMeetup(ctx, userID, meetupID)
 		require.ErrorIs(t, err, ErrForbidden)
@@ -241,7 +240,7 @@ func TestMeetupService_JoinMeetup(t *testing.T) {
 
 		m := activePublic()
 		m.Status = "cancelled"
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(m, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(m, nil)
 
 		err := svc.JoinMeetup(ctx, userID, meetupID)
 		require.ErrorIs(t, err, ErrMeetupFinished)
@@ -253,7 +252,7 @@ func TestMeetupService_JoinMeetup(t *testing.T) {
 
 		m := activePublic()
 		m.EndTime = time.Now().Add(-time.Hour)
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(m, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(m, nil)
 
 		err := svc.JoinMeetup(ctx, userID, meetupID)
 		require.ErrorIs(t, err, ErrMeetupFinished)
@@ -265,7 +264,7 @@ func TestMeetupService_JoinMeetup(t *testing.T) {
 
 		m := activePublic()
 		m.IsMember = true
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(m, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(m, nil)
 
 		err := svc.JoinMeetup(ctx, userID, meetupID)
 		require.ErrorIs(t, err, ErrAlreadyExists)
@@ -403,8 +402,8 @@ func TestMeetupService_DeleteMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).
-			Return(&domain.Meetup{ID: meetupID, CreatorID: userID}, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).
+			Return(&repo.MeetupAuth{CreatorID: userID}, nil)
 		mockRepo.EXPECT().Delete(ctx, meetupID).Return(nil)
 
 		require.NoError(t, svc.DeleteMeetup(ctx, userID, meetupID))
@@ -414,8 +413,8 @@ func TestMeetupService_DeleteMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).
-			Return(&domain.Meetup{ID: meetupID, CreatorID: 999}, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).
+			Return(&repo.MeetupAuth{CreatorID: 999}, nil)
 
 		require.ErrorIs(t, svc.DeleteMeetup(ctx, userID, meetupID), ErrForbidden)
 	})
@@ -424,7 +423,7 @@ func TestMeetupService_DeleteMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(nil, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(nil, nil)
 
 		require.ErrorIs(t, svc.DeleteMeetup(ctx, userID, meetupID), ErrNotFound)
 	})
@@ -439,8 +438,8 @@ func TestMeetupService_LeaveMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).
-			Return(&domain.Meetup{ID: meetupID, CreatorID: 999}, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).
+			Return(&repo.MeetupAuth{CreatorID: 999}, nil)
 		mockRepo.EXPECT().Leave(ctx, meetupID, userID).Return(nil)
 
 		require.NoError(t, svc.LeaveMeetup(ctx, userID, meetupID))
@@ -450,8 +449,8 @@ func TestMeetupService_LeaveMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).
-			Return(&domain.Meetup{ID: meetupID, CreatorID: userID}, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).
+			Return(&repo.MeetupAuth{CreatorID: userID}, nil)
 		// Leave не должен вызываться.
 
 		require.ErrorIs(t, svc.LeaveMeetup(ctx, userID, meetupID), ErrOrganizerCannotLeave)
@@ -461,7 +460,7 @@ func TestMeetupService_LeaveMeetup(t *testing.T) {
 		mr, _, mockRepo, svc := setupMeetupTest(t)
 		defer mr.Close()
 
-		mockRepo.EXPECT().GetByID(ctx, meetupID, userID).Return(nil, nil)
+		mockRepo.EXPECT().GetForAuth(ctx, meetupID, userID).Return(nil, nil)
 
 		require.ErrorIs(t, svc.LeaveMeetup(ctx, userID, meetupID), ErrNotFound)
 	})
@@ -477,8 +476,8 @@ func TestMeetupService_ListMeetups(t *testing.T) {
 	// Limit == 0 должен подставить дефолт 20 на уровне сервиса.
 	mockRepo.EXPECT().
 		List(ctx, gomock.Any(), userID).
-		DoAndReturn(func(_ context.Context, f dto.MeetupFilter, _ int64) ([]domain.Meetup, error) {
-			assert.Equal(t, 20, f.Limit, "service must default empty limit to 20")
+		DoAndReturn(func(_ context.Context, q repo.MeetupQuery, _ int64) ([]domain.Meetup, error) {
+			assert.Equal(t, 20, q.Limit, "service must default empty limit to 20")
 			return []domain.Meetup{{ID: 1, Title: "A"}, {ID: 2, Title: "B"}}, nil
 		})
 

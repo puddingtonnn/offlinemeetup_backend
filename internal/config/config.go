@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -128,7 +129,7 @@ func Load() (*Config, error) {
 	cfg.JWTRefreshTTL = durEnv("JWT_REFRESH_TTL", 30*24*time.Hour)
 
 	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
-		for _, o := range strings.Split(origins, ",") {
+		for o := range strings.SplitSeq(origins, ",") {
 			if o = strings.TrimSpace(o); o != "" {
 				cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, o)
 			}
@@ -140,7 +141,7 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.DBDSN == "" {
-		return nil, fmt.Errorf("DB_DSN is not set")
+		return nil, errors.New("DB_DSN is not set")
 	}
 	if cfg.GoogleClientID == "" {
 		fmt.Println("WARNING: GOOGLE_WEB_CLIENT_ID is not set")
@@ -150,10 +151,10 @@ func Load() (*Config, error) {
 	// токен Telegram вырождает HMAC-ключ в sha256("") (форж подписи). Падаем на
 	// старте во всех окружениях, как уже делает проверка DB_DSN выше.
 	if cfg.TelegramBotToken == "" {
-		return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is not set")
+		return nil, errors.New("TELEGRAM_BOT_TOKEN is not set")
 	}
 	if cfg.JWTSecret == "" {
-		return nil, fmt.Errorf("JWT_SECRET_KEY is not set")
+		return nil, errors.New("JWT_SECRET_KEY is not set")
 	}
 	if cfg.Env == "" {
 		cfg.Env = "local"

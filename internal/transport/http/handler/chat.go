@@ -2,18 +2,14 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
-
-	"github.com/go-chi/chi/v5"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
 )
 
 type ChatHandler struct {
@@ -38,9 +34,8 @@ func NewChatHandler(service *service.ChatService, presence *service.PresenceServ
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats [get]
 func (h *ChatHandler) GetUserChats(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -68,16 +63,13 @@ func (h *ChatHandler) GetUserChats(w http.ResponseWriter, r *http.Request) {
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats/{id}/messages [get]
 func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-	chatID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id"), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -112,15 +104,13 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats/{id}/presence [get]
 func (h *ChatHandler) GetChatPresence(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	chatID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id: %w", service.ErrInvalidInput), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -173,16 +163,13 @@ type EditMessageRequest struct {
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats/{id}/messages [post]
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-	chatID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id"), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -227,21 +214,18 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 // @Failure     404       {object}  response.ErrorResponse "Сообщение не найдено"
 // @Router      /v1/chats/{id}/messages/{messageId} [patch]
 func (h *ChatHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	chatID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id: %w", service.ErrInvalidInput), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
-	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageId"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid message id: %w", service.ErrInvalidInput), h.log)
+	messageID, ok := pathInt64(w, r, "messageId", h.log)
+	if !ok {
 		return
 	}
 
@@ -276,21 +260,18 @@ func (h *ChatHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
 // @Failure     404       {object}  response.ErrorResponse "Сообщение не найдено"
 // @Router      /v1/chats/{id}/messages/{messageId} [delete]
 func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	chatID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id: %w", service.ErrInvalidInput), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
-	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageId"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid message id: %w", service.ErrInvalidInput), h.log)
+	messageID, ok := pathInt64(w, r, "messageId", h.log)
+	if !ok {
 		return
 	}
 

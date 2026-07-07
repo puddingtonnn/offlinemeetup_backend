@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 // publicURL строит полный публичный URL файла в S3 или "" если файла нет.

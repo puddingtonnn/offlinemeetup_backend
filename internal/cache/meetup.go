@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 // meetupSnapshot — то, что лежит в кеше: инвариантный (одинаковый для всех) DTO

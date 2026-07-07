@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
 // maxMeetupOffset — верхняя граница пагинационного сдвига для списка митапов.
@@ -18,8 +18,9 @@ const maxMeetupOffset = 100_000
 type MeetupRepository interface {
 	Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error)
 	GetByID(ctx context.Context, id int64, currentUserID int64) (*domain.Meetup, error)
+	GetForAuth(ctx context.Context, id, userID int64) (*repo.MeetupAuth, error)
 	GetByInviteToken(ctx context.Context, token uuid.UUID, currentUserID int64) (*domain.Meetup, error)
-	List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error)
+	List(ctx context.Context, filter repo.MeetupQuery, currentUserID int64) ([]domain.Meetup, error)
 	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
 	Delete(ctx context.Context, id int64) error
 	Join(ctx context.Context, meetupID, userID int64) error
@@ -144,21 +145,35 @@ func (s *MeetupService) GetMeetup(ctx context.Context, id int64, userID int64) (
 }
 
 func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dto.MeetupFilter) ([]*dto.MeetupResponse, error) {
-	if filter.Limit == 0 {
-		filter.Limit = 20
+	// Маппим транспортный DTO в критерий репозитория на границе сервиса: так SQL-
+	// слой не зависит от формата HTTP-запроса. Заодно применяем бизнес-клампы.
+	q := repo.MeetupQuery{
+		Lat:         filter.Lat,
+		Lng:         filter.Lng,
+		Radius:      filter.Radius,
+		Limit:       filter.Limit,
+		Offset:      filter.Offset,
+		Tags:        filter.Tags,
+		OnlyMy:      filter.OnlyMy,
+		OnlyCreated: filter.OnlyCreated,
+		ExcludeOwn:  filter.ExcludeOwn,
+		ShowPast:    filter.ShowPast,
 	}
-	if filter.Limit > 100 {
-		filter.Limit = 100
+	if q.Limit == 0 {
+		q.Limit = 20
+	}
+	if q.Limit > 100 {
+		q.Limit = 100
 	}
 	// Ограничиваем offset: бессмысленно большой сдвиг — это деградация запроса.
-	if filter.Offset < 0 {
-		filter.Offset = 0
+	if q.Offset < 0 {
+		q.Offset = 0
 	}
-	if filter.Offset > maxMeetupOffset {
-		filter.Offset = maxMeetupOffset
+	if q.Offset > maxMeetupOffset {
+		q.Offset = maxMeetupOffset
 	}
 
-	meetups, err := s.repo.List(ctx, filter, userID)
+	meetups, err := s.repo.List(ctx, q, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +254,8 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 }
 
 func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID int64) error {
-	existing, err := s.repo.GetByID(ctx, meetupID, userID)
+	// Авторизация читает только скаляры — GetForAuth вместо полной гидрации GetByID.
+	existing, err := s.repo.GetForAuth(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}
@@ -260,7 +276,7 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 }
 
 func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) error {
-	meetup, err := s.repo.GetByID(ctx, meetupID, userID)
+	meetup, err := s.repo.GetForAuth(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}
@@ -295,7 +311,7 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 }
 
 func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64) error {
-	meetup, err := s.repo.GetByID(ctx, meetupID, userID)
+	meetup, err := s.repo.GetForAuth(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}

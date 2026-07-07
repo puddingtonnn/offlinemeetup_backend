@@ -21,8 +21,8 @@ deps: ## Обновить зависимости
 	go mod tidy
 
 .PHONY: test
-test: ## Запустить Unit-тесты
-	go test -v ./...
+test: ## Запустить Unit-тесты (с race-детектором — код плотно конкурентный)
+	go test -race ./...
 
 .PHONY: lint
 lint: ## Запустить линтер (требуется golangci-lint)

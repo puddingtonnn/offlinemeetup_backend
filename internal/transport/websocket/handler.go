@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"log"
 	"log/slog"
 	"net/http"
 	"time"
@@ -62,7 +61,7 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		h.log.Error("websocket upgrade failed", slog.Any("err", err))
 		return
 	}
 
@@ -83,13 +82,16 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		hub:         h.hub,
 		conn:        conn,
 		send:        make(chan []byte, 256),
+		work:        make(chan WSEvent, workBuffer),
 		chatService: h.chatService,
 		presence:    h.presenceService,
 		log:         h.log,
 		cancel:      cancel,
 	}
-	client.hub.register <- client
 
+	// Полностью заполняем client.rooms ДО публикации клиента в хаб: send в
+	// register-канал переносит готовый слайс через happens-before границу, иначе
+	// горутина хаба (unregister) могла бы читать rooms, пока ServeWs ещё аппендит.
 	chats, err := h.chatService.GetUserChats(context.Background(), userID)
 	if err == nil {
 		for _, chat := range chats {
@@ -100,13 +102,18 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("failed to get user chats for ws subscription", slog.Any("err", err))
 	}
 
+	client.hub.register <- client
+
 	// Регистрируем присутствие и шлём начальный снапшот до старта насосов: канал
 	// send буферизирован, поэтому снапшот дождётся writePump. Best-effort.
 	h.announcePresence(userID, client)
 
-	// Передаем контекст и функцию отмены в горутины
-	go client.writePump(ctx, cancel)
-	go client.readPump(ctx, cancel)
+	// Каждая горутина соединения — под safeGo: паника в одной изолирована и не
+	// роняет процесс. eventPump — единственный воркер, обрабатывающий события по
+	// порядку.
+	safeGo(h.log, func() { client.writePump(ctx, cancel) })
+	safeGo(h.log, func() { client.eventPump(ctx) })
+	safeGo(h.log, func() { client.readPump(ctx, cancel) })
 }
 
 // announcePresence marks the user online, broadcasts userOnline to co-chat

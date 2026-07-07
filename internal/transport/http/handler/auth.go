@@ -9,8 +9,8 @@ import (
 
 	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 )
 

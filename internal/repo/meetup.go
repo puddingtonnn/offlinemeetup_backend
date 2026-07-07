@@ -9,9 +9,37 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
 )
+
+// MeetupQuery is the repo-owned search criteria for List. It is deliberately a
+// plain struct with no json tags: how an HTTP client serializes a request is a
+// transport concern, so the SQL layer must not depend on the wire DTO. The
+// service maps dto.MeetupFilter into this at its boundary (keeping the arrow
+// transport→service→repo, not repo→transport).
+type MeetupQuery struct {
+	Lat, Lng    float64
+	Radius      int
+	Limit       int
+	Offset      int
+	Tags        []int64
+	OnlyMy      bool
+	OnlyCreated bool
+	ExcludeOwn  bool
+	ShowPast    bool
+}
+
+// MeetupAuth is the minimal projection needed to authorize a mutation on a
+// meetup, without hydrating the full creator/participants/tags graph GetByID
+// loads. Join/Leave/Delete read only a few scalar columns, so one cheap indexed
+// read replaces several relation round-trips (and a whole participant roster).
+type MeetupAuth struct {
+	CreatorID int64
+	IsPublic  bool
+	Status    string
+	EndTime   time.Time
+	IsMember  bool
+}
 
 type MeetupRepo struct {
 	db       *bun.DB
@@ -123,6 +151,26 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 	return &meetup, nil
 }
 
+// GetForAuth loads only the scalar columns (plus is_member) needed to authorize
+// a mutation, avoiding GetByID's relation fan-out. Returns (nil, nil) when the
+// meetup does not exist, mirroring GetByID so the service maps it to ErrNotFound.
+func (r *MeetupRepo) GetForAuth(ctx context.Context, id, userID int64) (*MeetupAuth, error) {
+	var a MeetupAuth
+	err := r.db.NewSelect().
+		TableExpr("meetups AS m").
+		ColumnExpr("m.creator_id, m.is_public, m.status, m.end_time").
+		ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = m.id AND p.user_id = ?) AS is_member", userID).
+		Where("m.id = ?", id).
+		Scan(ctx, &a.CreatorID, &a.IsPublic, &a.Status, &a.EndTime, &a.IsMember)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading meetup %d for auth: %w", id, err)
+	}
+	return &a, nil
+}
+
 func (r *MeetupRepo) GetByInviteToken(ctx context.Context, token uuid.UUID, currentUserID int64) (*domain.Meetup, error) {
 	var meetup domain.Meetup
 
@@ -146,7 +194,7 @@ func (r *MeetupRepo) GetByInviteToken(ctx context.Context, token uuid.UUID, curr
 	return &meetup, nil
 }
 
-func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error) {
+func (r *MeetupRepo) List(ctx context.Context, filter MeetupQuery, currentUserID int64) ([]domain.Meetup, error) {
 	var meetups []domain.Meetup
 
 	q := r.db.NewSelect().Model(&meetups)

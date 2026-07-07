@@ -2,11 +2,13 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"net/http"
 	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 )
 
 // UserStatusChecker сообщает, активен ли аккаунт пользователя.
@@ -83,7 +85,7 @@ func UserIdentityMiddleware(cfg *config.Config) func(http.Handler) http.Handler 
 }
 
 func parseToken(tokenString, secret string) (int64, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -91,17 +93,17 @@ func parseToken(tokenString, secret string) (int64, error) {
 	})
 
 	if err != nil || !token.Valid {
-		return 0, fmt.Errorf("invalid token")
+		return 0, errors.New("invalid token")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return 0, fmt.Errorf("invalid claims")
+		return 0, errors.New("invalid claims")
 	}
 
 	userIDFloat, ok := claims["userID"].(float64)
 	if !ok {
-		return 0, fmt.Errorf("invalid user id")
+		return 0, errors.New("invalid user id")
 	}
 
 	return int64(userIDFloat), nil
