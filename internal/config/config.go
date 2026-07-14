@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -18,6 +19,12 @@ type Config struct {
 	JWTSecret        string
 	Env              string
 	DaDataToken      string
+
+	// JWTAccessTTL — время жизни короткого access-токена (JWT_ACCESS_TTL,
+	// дефолт 15m). JWTRefreshTTL — время жизни refresh-токена (JWT_REFRESH_TTL,
+	// дефолт 720h ≈ 30 дней).
+	JWTAccessTTL  time.Duration
+	JWTRefreshTTL time.Duration
 
 	S3Endpoint  string
 	S3Region    string
@@ -43,6 +50,17 @@ type Config struct {
 	PresenceTTL time.Duration
 
 	WSAllowedOrigins []string
+
+	// TrustProxyHeaders — доверять X-Real-IP / X-Forwarded-For при вычислении IP
+	// клиента для rate-limit. Включать ТОЛЬКО за доверенным прокси, который сам
+	// перезаписывает эти заголовки; иначе клиент подделает их и получит свежий
+	// бакет на каждый запрос, обойдя лимит. Дефолт false (берём RemoteAddr).
+	TrustProxyHeaders bool
+
+	// MaxUploadSize — максимальный размер загружаемого файла в байтах
+	// (MAX_UPLOAD_SIZE, дефолт 100 MB). Применяется и в хендлере (MaxBytesReader),
+	// и в FileService.Upload.
+	MaxUploadSize int64
 }
 
 // durEnv reads a duration from env (e.g. "200ms", "5m"); on an empty or
@@ -51,6 +69,17 @@ func durEnv(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return def
+}
+
+// int64Env reads an integer (bytes) from env; on an empty or unparseable value
+// it returns def.
+func int64Env(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
 		}
 	}
 	return def
@@ -94,9 +123,13 @@ func Load() (*Config, error) {
 	cfg.CacheTTLProfile = durEnv("CACHE_TTL_PROFILE", 10*time.Minute)
 	cfg.CacheTTLMeetup = durEnv("CACHE_TTL_MEETUP", 2*time.Minute)
 	cfg.PresenceTTL = durEnv("PRESENCE_TTL", 2*time.Minute)
+	cfg.MaxUploadSize = int64Env("MAX_UPLOAD_SIZE", 100<<20)
+	cfg.TrustProxyHeaders = os.Getenv("TRUST_PROXY_HEADERS") == "true"
+	cfg.JWTAccessTTL = durEnv("JWT_ACCESS_TTL", 15*time.Minute)
+	cfg.JWTRefreshTTL = durEnv("JWT_REFRESH_TTL", 30*24*time.Hour)
 
 	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
-		for _, o := range strings.Split(origins, ",") {
+		for o := range strings.SplitSeq(origins, ",") {
 			if o = strings.TrimSpace(o); o != "" {
 				cfg.WSAllowedOrigins = append(cfg.WSAllowedOrigins, o)
 			}
@@ -108,16 +141,20 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.DBDSN == "" {
-		return nil, fmt.Errorf("DB_DSN is not set")
+		return nil, errors.New("DB_DSN is not set")
 	}
 	if cfg.GoogleClientID == "" {
 		fmt.Println("WARNING: GOOGLE_WEB_CLIENT_ID is not set")
 	}
+	// Секреты-капабилити обязаны быть заданы: пустой JWT-секрет означает подпись/
+	// проверку HMAC-ключом нулевой длины (форж токена под любой userID), пустой
+	// токен Telegram вырождает HMAC-ключ в sha256("") (форж подписи). Падаем на
+	// старте во всех окружениях, как уже делает проверка DB_DSN выше.
 	if cfg.TelegramBotToken == "" {
-		fmt.Println("WARNING: TELEGRAM_BOT_TOKEN is not set")
+		return nil, errors.New("TELEGRAM_BOT_TOKEN is not set")
 	}
 	if cfg.JWTSecret == "" {
-		fmt.Println("WARNING: JWT_SECRET_KEY is not set")
+		return nil, errors.New("JWT_SECRET_KEY is not set")
 	}
 	if cfg.Env == "" {
 		cfg.Env = "local"

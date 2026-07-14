@@ -4,13 +4,10 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
-	response "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 )
 
 type ProfileHandler struct {
@@ -34,9 +31,8 @@ func NewProfileHandler(service *service.ProfileService, log *slog.Logger) *Profi
 // @Security     BearerAuth
 // @Router       /v1/profile [get]
 func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -62,10 +58,8 @@ func (h *ProfileHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /v1/profile/{id} [get]
 func (h *ProfileHandler) GetProfileByID(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	userID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, service.ErrInvalidInput, h.log)
+	userID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -90,9 +84,8 @@ func (h *ProfileHandler) GetProfileByID(w http.ResponseWriter, r *http.Request) 
 // @Security     BearerAuth
 // @Router       /v1/profile [patch]
 func (h *ProfileHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 

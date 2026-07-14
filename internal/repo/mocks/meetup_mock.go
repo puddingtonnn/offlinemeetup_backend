@@ -15,7 +15,8 @@ import (
 
 	uuid "github.com/google/uuid"
 	domain "github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	dto "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	dto "github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
+	repo "github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -102,6 +103,21 @@ func (mr *MockMeetupRepositoryMockRecorder) GetByInviteToken(ctx, token, current
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByInviteToken", reflect.TypeOf((*MockMeetupRepository)(nil).GetByInviteToken), ctx, token, currentUserID)
 }
 
+// GetForAuth mocks base method.
+func (m *MockMeetupRepository) GetForAuth(ctx context.Context, id, userID int64) (*repo.MeetupAuth, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetForAuth", ctx, id, userID)
+	ret0, _ := ret[0].(*repo.MeetupAuth)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetForAuth indicates an expected call of GetForAuth.
+func (mr *MockMeetupRepositoryMockRecorder) GetForAuth(ctx, id, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetForAuth", reflect.TypeOf((*MockMeetupRepository)(nil).GetForAuth), ctx, id, userID)
+}
+
 // Join mocks base method.
 func (m *MockMeetupRepository) Join(ctx context.Context, meetupID, userID int64) error {
 	m.ctrl.T.Helper()
@@ -131,7 +147,7 @@ func (mr *MockMeetupRepositoryMockRecorder) Leave(ctx, meetupID, userID any) *go
 }
 
 // List mocks base method.
-func (m *MockMeetupRepository) List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error) {
+func (m *MockMeetupRepository) List(ctx context.Context, filter repo.MeetupQuery, currentUserID int64) ([]domain.Meetup, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "List", ctx, filter, currentUserID)
 	ret0, _ := ret[0].([]domain.Meetup)
@@ -157,4 +173,95 @@ func (m *MockMeetupRepository) Update(ctx context.Context, meetup *domain.Meetup
 func (mr *MockMeetupRepositoryMockRecorder) Update(ctx, meetup, newTagIDs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockMeetupRepository)(nil).Update), ctx, meetup, newTagIDs)
+}
+
+// MockchatCacheInvalidator is a mock of chatCacheInvalidator interface.
+type MockchatCacheInvalidator struct {
+	ctrl     *gomock.Controller
+	recorder *MockchatCacheInvalidatorMockRecorder
+	isgomock struct{}
+}
+
+// MockchatCacheInvalidatorMockRecorder is the mock recorder for MockchatCacheInvalidator.
+type MockchatCacheInvalidatorMockRecorder struct {
+	mock *MockchatCacheInvalidator
+}
+
+// NewMockchatCacheInvalidator creates a new mock instance.
+func NewMockchatCacheInvalidator(ctrl *gomock.Controller) *MockchatCacheInvalidator {
+	mock := &MockchatCacheInvalidator{ctrl: ctrl}
+	mock.recorder = &MockchatCacheInvalidatorMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockchatCacheInvalidator) EXPECT() *MockchatCacheInvalidatorMockRecorder {
+	return m.recorder
+}
+
+// InvalidateUserChats mocks base method.
+func (m *MockchatCacheInvalidator) InvalidateUserChats(ctx context.Context, userID int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InvalidateUserChats", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InvalidateUserChats indicates an expected call of InvalidateUserChats.
+func (mr *MockchatCacheInvalidatorMockRecorder) InvalidateUserChats(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InvalidateUserChats", reflect.TypeOf((*MockchatCacheInvalidator)(nil).InvalidateUserChats), ctx, userID)
+}
+
+// MockmeetupCache is a mock of meetupCache interface.
+type MockmeetupCache struct {
+	ctrl     *gomock.Controller
+	recorder *MockmeetupCacheMockRecorder
+	isgomock struct{}
+}
+
+// MockmeetupCacheMockRecorder is the mock recorder for MockmeetupCache.
+type MockmeetupCacheMockRecorder struct {
+	mock *MockmeetupCache
+}
+
+// NewMockmeetupCache creates a new mock instance.
+func NewMockmeetupCache(ctrl *gomock.Controller) *MockmeetupCache {
+	mock := &MockmeetupCache{ctrl: ctrl}
+	mock.recorder = &MockmeetupCacheMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockmeetupCache) EXPECT() *MockmeetupCacheMockRecorder {
+	return m.recorder
+}
+
+// InvalidateMeetup mocks base method.
+func (m *MockmeetupCache) InvalidateMeetup(ctx context.Context, meetupID int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InvalidateMeetup", ctx, meetupID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InvalidateMeetup indicates an expected call of InvalidateMeetup.
+func (mr *MockmeetupCacheMockRecorder) InvalidateMeetup(ctx, meetupID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InvalidateMeetup", reflect.TypeOf((*MockmeetupCache)(nil).InvalidateMeetup), ctx, meetupID)
+}
+
+// Meetup mocks base method.
+func (m *MockmeetupCache) Meetup(ctx context.Context, meetupID, userID int64, load func() (dto.MeetupResponse, []int64, error)) (*dto.MeetupResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Meetup", ctx, meetupID, userID, load)
+	ret0, _ := ret[0].(*dto.MeetupResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Meetup indicates an expected call of Meetup.
+func (mr *MockmeetupCacheMockRecorder) Meetup(ctx, meetupID, userID, load any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Meetup", reflect.TypeOf((*MockmeetupCache)(nil).Meetup), ctx, meetupID, userID, load)
 }

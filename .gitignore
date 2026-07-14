@@ -41,3 +41,8 @@ go.work.sum
 logs/
 # Private product roadmap — not for public repo
 docs/ROADMAP.md
+
+# AI-tooling files — kept local only, not tracked
+CLAUDE.md
+GEMINI.md
+docs/superpowers/

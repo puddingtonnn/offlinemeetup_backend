@@ -18,9 +18,9 @@ import (
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo/mocks"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 )
 
 func setupChatTest(t *testing.T) (*miniredis.Miniredis, *redis.Client, *mocks.MockChatRepository, *ChatService) {
@@ -74,18 +74,19 @@ func TestChatService_SendMessage(t *testing.T) {
 
 	mockRepo.EXPECT().
 		SaveMessage(ctx, gomock.Any()).
-		DoAndReturn(func(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error) {
+		DoAndReturn(func(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error) {
 			assert.Equal(t, chatID, msg.ChatID)
 			assert.Equal(t, userID, msg.SenderID)
 			assert.Equal(t, content, msg.Content)
 
 			msg.ID = 10
-			return msg, []int64{1, 2, 3}, nil
+			return msg, []int64{1, 2, 3}, true, nil
 		})
 
-	resp, targetIDs, err := svc.SendMessage(ctx, chatID, userID, content, nil, nil)
+	resp, targetIDs, created, err := svc.SendMessage(ctx, chatID, userID, content, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+	assert.True(t, created)
 	assert.Equal(t, int64(10), resp.ID)
 	assert.Equal(t, content, resp.Content)
 	assert.ElementsMatch(t, []int64{1, 2, 3}, targetIDs)
@@ -94,6 +95,34 @@ func TestChatService_SendMessage(t *testing.T) {
 	assert.False(t, mr.Exists("user_chats:1"))
 	assert.False(t, mr.Exists("user_chats:2"))
 	assert.False(t, mr.Exists("user_chats:3"))
+}
+
+// TestChatService_SendMessage_Idempotent — при повторной отправке с тем же
+// request_id репозиторий возвращает created=false; сервис прокидывает флаг и НЕ
+// инвалидирует кэш (сообщение не новое, превью чатов не изменилось).
+func TestChatService_SendMessage_Idempotent(t *testing.T) {
+	mr, rdb, mockRepo, svc := setupChatTest(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+	reqID := "idem-key-1"
+	require.NoError(t, rdb.Set(ctx, "user_chats:2", "[]", 0).Err())
+
+	mockRepo.EXPECT().
+		SaveMessage(ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error) {
+			require.NotNil(t, msg.RequestID, "request_id must be threaded to the repo")
+			assert.Equal(t, reqID, *msg.RequestID)
+			msg.ID = 42
+			return msg, []int64{2}, false, nil // created=false: дубль
+		})
+
+	resp, _, created, err := svc.SendMessage(ctx, 100, 1, "hi", nil, nil, &reqID)
+	require.NoError(t, err)
+	assert.False(t, created, "duplicate must report created=false")
+	require.NotNil(t, resp)
+	assert.Equal(t, int64(42), resp.ID)
+	assert.True(t, mr.Exists("user_chats:2"), "cache must NOT be invalidated on a duplicate")
 }
 
 func TestChatService_GetUserChats(t *testing.T) {
@@ -164,6 +193,25 @@ func TestChatService_MarkAsRead(t *testing.T) {
 	assert.False(t, mr.Exists("user_chats:1"))
 }
 
+// Не-участник чата не должен инициировать рассылку messagesRead: репозиторий
+// возвращает ErrNotChatMember, сервис переводит его в ErrForbidden и НЕ зовёт
+// GetChatParticipantIDs (broadcast не происходит).
+func TestChatService_MarkAsRead_NotMember(t *testing.T) {
+	mr, _, mockRepo, svc := setupChatTest(t)
+	defer mr.Close()
+
+	ctx := context.Background()
+
+	mockRepo.EXPECT().
+		MarkAsRead(ctx, int64(100), int64(7), int64(50)).
+		Return(repo.ErrNotChatMember)
+	// GetChatParticipantIDs не ожидается — gomock провалит тест, если его вызовут.
+
+	targetIDs, err := svc.MarkAsRead(ctx, 100, 7, 50)
+	require.ErrorIs(t, err, ErrForbidden)
+	assert.Nil(t, targetIDs)
+}
+
 func TestChatService_SendMessage_Validation(t *testing.T) {
 	ctx := context.Background()
 
@@ -172,7 +220,7 @@ func TestChatService_SendMessage_Validation(t *testing.T) {
 		defer mr.Close()
 
 		// Репозиторий не должен вызываться (нет EXPECT).
-		_, _, err := svc.SendMessage(ctx, 100, 1, "   ", nil, nil)
+		_, _, _, err := svc.SendMessage(ctx, 100, 1, "   ", nil, nil, nil)
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 
@@ -180,7 +228,7 @@ func TestChatService_SendMessage_Validation(t *testing.T) {
 		mr, _, _, svc := setupChatTest(t)
 		defer mr.Close()
 
-		_, _, err := svc.SendMessage(ctx, 100, 1, strings.Repeat("a", 4097), nil, nil)
+		_, _, _, err := svc.SendMessage(ctx, 100, 1, strings.Repeat("a", 4097), nil, nil, nil)
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 }
@@ -195,15 +243,15 @@ func TestChatService_SendMessage_Attachment(t *testing.T) {
 		fileID := "11111111-1111-1111-1111-111111111111"
 		mockRepo.EXPECT().
 			SaveMessage(ctx, gomock.Any()).
-			DoAndReturn(func(_ context.Context, msg *domain.Message) (*domain.Message, []int64, error) {
+			DoAndReturn(func(_ context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error) {
 				assert.True(t, msg.FileID.Valid, "file id must be set on the saved message")
 				assert.Equal(t, "file", msg.MessageType)
 				msg.ID = 7
 				msg.File = &domain.File{FileName: "pic.png", Key: "uploads/pic.png", MimeType: "image/png", Size: 1234}
-				return msg, []int64{1}, nil
+				return msg, []int64{1}, true, nil
 			})
 
-		resp, _, err := svc.SendMessage(ctx, 100, 1, "", nil, &fileID)
+		resp, _, _, err := svc.SendMessage(ctx, 100, 1, "", nil, &fileID, nil)
 		require.NoError(t, err)
 		require.NotNil(t, resp.Attachment)
 		assert.Equal(t, "http://s3.example.com/uploads/pic.png", resp.Attachment.URL)
@@ -216,7 +264,7 @@ func TestChatService_SendMessage_Attachment(t *testing.T) {
 		defer mr.Close()
 
 		bad := "not-a-uuid"
-		_, _, err := svc.SendMessage(ctx, 100, 1, "hi", nil, &bad)
+		_, _, _, err := svc.SendMessage(ctx, 100, 1, "hi", nil, &bad, nil)
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 }
@@ -243,9 +291,9 @@ func TestChatService_SendMessage_RepoErrorMapping(t *testing.T) {
 
 			mockRepo.EXPECT().
 				SaveMessage(ctx, gomock.Any()).
-				Return(nil, nil, tt.repoErr)
+				Return(nil, nil, false, tt.repoErr)
 
-			_, _, err := svc.SendMessage(ctx, chatID, userID, "hello", nil, nil)
+			_, _, _, err := svc.SendMessage(ctx, chatID, userID, "hello", nil, nil, nil)
 			require.Error(t, err)
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
@@ -268,10 +316,10 @@ func TestChatService_EditMessage(t *testing.T) {
 
 		edited := time.Now()
 		mockRepo.EXPECT().
-			EditMessage(ctx, int64(10), int64(1), "new text").
+			EditMessage(ctx, int64(5), int64(10), int64(1), "new text").
 			Return(&domain.Message{ID: 10, ChatID: 5, SenderID: 1, Content: "new text", EditedAt: &edited}, []int64{2}, nil)
 
-		resp, targetIDs, err := svc.EditMessage(ctx, 10, 1, "new text")
+		resp, targetIDs, err := svc.EditMessage(ctx, 5, 10, 1, "new text")
 		require.NoError(t, err)
 		assert.Equal(t, "new text", resp.Content)
 		require.NotNil(t, resp.EditedAt)
@@ -284,10 +332,10 @@ func TestChatService_EditMessage(t *testing.T) {
 		defer mr.Close()
 
 		mockRepo.EXPECT().
-			EditMessage(ctx, int64(10), int64(99), "x").
+			EditMessage(ctx, int64(5), int64(10), int64(99), "x").
 			Return(nil, nil, repo.ErrNotMessageAuthor)
 
-		_, _, err := svc.EditMessage(ctx, 10, 99, "x")
+		_, _, err := svc.EditMessage(ctx, 5, 10, 99, "x")
 		require.ErrorIs(t, err, ErrForbidden)
 	})
 
@@ -295,7 +343,7 @@ func TestChatService_EditMessage(t *testing.T) {
 		mr, _, _, svc := setupChatTest(t)
 		defer mr.Close()
 
-		_, _, err := svc.EditMessage(ctx, 10, 1, "   ")
+		_, _, err := svc.EditMessage(ctx, 5, 10, 1, "   ")
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 }
@@ -308,10 +356,10 @@ func TestChatService_DeleteMessage(t *testing.T) {
 		defer mr.Close()
 
 		mockRepo.EXPECT().
-			DeleteMessage(ctx, int64(10), int64(1)).
+			DeleteMessage(ctx, int64(5), int64(10), int64(1)).
 			Return(int64(5), []int64{1, 2}, nil)
 
-		chatID, targetIDs, err := svc.DeleteMessage(ctx, 10, 1)
+		chatID, targetIDs, err := svc.DeleteMessage(ctx, 5, 10, 1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(5), chatID)
 		assert.ElementsMatch(t, []int64{1, 2}, targetIDs)
@@ -322,10 +370,10 @@ func TestChatService_DeleteMessage(t *testing.T) {
 		defer mr.Close()
 
 		mockRepo.EXPECT().
-			DeleteMessage(ctx, int64(10), int64(1)).
+			DeleteMessage(ctx, int64(5), int64(10), int64(1)).
 			Return(int64(0), nil, repo.ErrMessageNotFound)
 
-		_, _, err := svc.DeleteMessage(ctx, 10, 1)
+		_, _, err := svc.DeleteMessage(ctx, 5, 10, 1)
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 }

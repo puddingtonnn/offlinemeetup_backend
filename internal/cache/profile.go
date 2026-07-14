@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 // ProfileCache кеширует профили по userID. Профиль пользователя одинаков для

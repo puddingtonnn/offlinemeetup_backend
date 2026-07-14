@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
 )
 
@@ -20,9 +20,9 @@ type ChatRepository interface {
 	GetChatByMeetupID(ctx context.Context, tx bun.IDB, meetupID int64) (*domain.Chat, error)
 	GetUserChats(ctx context.Context, userID int64) ([]domain.Chat, error)
 	GetMessages(ctx context.Context, userID, chatID, cursor int64, limit int) ([]domain.Message, error)
-	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error)
-	EditMessage(ctx context.Context, msgID, editorID int64, content string) (*domain.Message, []int64, error)
-	DeleteMessage(ctx context.Context, msgID, editorID int64) (int64, []int64, error)
+	SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error)
+	EditMessage(ctx context.Context, chatID, msgID, editorID int64, content string) (*domain.Message, []int64, error)
+	DeleteMessage(ctx context.Context, chatID, msgID, editorID int64) (int64, []int64, error)
 	MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) error
 	GetChatParticipantIDs(ctx context.Context, chatID int64) ([]int64, error)
 	GetCoChatUserIDs(ctx context.Context, userID int64) ([]int64, error)
@@ -48,6 +48,9 @@ func (s *ChatService) GetUserChats(ctx context.Context, userID int64) ([]dto.Cha
 		dtos := make([]dto.ChatResponse, 0, len(domainChats))
 		for _, c := range domainChats {
 			if resp := s.mapChatToResponse(&c); resp != nil {
+				// Встроенный митап тоже не должен светить инвайт-токен
+				// не-создателю (кеш чатов — per-user, так что это корректно).
+				gateInviteToken(resp.Meetup, userID)
 				dtos = append(dtos, *resp)
 			}
 		}
@@ -72,13 +75,30 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID, cursor in
 	return dtos, nil
 }
 
-func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string, replyToMessageID *int64, fileID *string) (*dto.MessageResponse, []int64, error) {
+// SendMessage persists a message and returns the DTO, the broadcast target IDs,
+// and whether it was newly created. requestID is an optional client idempotency
+// key: a repeat with the same key returns the original message with created=false
+// instead of inserting a duplicate (see repo.SaveMessage).
+func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, content string, replyToMessageID *int64, fileID *string, requestID *string) (*dto.MessageResponse, []int64, bool, error) {
 	content = strings.TrimSpace(content)
+
+	// Пустой request_id — это отсутствие ключа, а не ключ "". Нормализуем в nil,
+	// чтобы не индексировать "" и не схлопывать разные сообщения с пустым ключом
+	// в один (REST мог прислать &"" — WS уже отдаёт nil).
+	if requestID != nil && *requestID == "" {
+		requestID = nil
+	}
+	// request_id идёт в btree unique-индекс; чрезмерно длинное значение упало бы
+	// на INSERT ошибкой размера индексной записи (→ 500). Отклоняем заранее.
+	// UUID — 36 символов; 128 с запасом.
+	if requestID != nil && len(*requestID) > 128 {
+		return nil, nil, false, fmt.Errorf("request_id too long: %w", ErrInvalidInput)
+	}
 
 	hasAttachment := fileID != nil && *fileID != ""
 	// With an attachment the text (caption) may be empty; without one it may not.
 	if err := validateMessageContent(content, hasAttachment); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	msg := &domain.Message{
@@ -87,39 +107,42 @@ func (s *ChatService) SendMessage(ctx context.Context, chatID, senderID int64, c
 		Content:          content,
 		MessageType:      "text",
 		ReplyToMessageID: replyToMessageID,
+		RequestID:        requestID,
 	}
 
 	if hasAttachment {
 		id, err := uuid.Parse(*fileID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid file id: %w", ErrInvalidInput)
+			return nil, nil, false, fmt.Errorf("invalid file id: %w", ErrInvalidInput)
 		}
 		msg.FileID = uuid.NullUUID{UUID: id, Valid: true}
 		msg.MessageType = "file" // precise kind is carried by attachment.mime_type
 	}
 
-	savedMsg, targetIDs, err := s.repo.SaveMessage(ctx, msg)
+	savedMsg, targetIDs, created, err := s.repo.SaveMessage(ctx, msg)
 	if err != nil {
-		return nil, nil, mapChatRepoError(err)
+		return nil, nil, false, mapChatRepoError(err)
 	}
 
 	// Best-effort: a stale cache must not fail an already-saved message; the
 	// cache layer logs any failure.
-	_ = s.cache.InvalidateUserChatsMany(ctx, targetIDs...)
+	if created {
+		_ = s.cache.InvalidateUserChatsMany(ctx, targetIDs...)
+	}
 
-	return s.mapMessageToResponse(savedMsg), targetIDs, nil
+	return s.mapMessageToResponse(savedMsg), targetIDs, created, nil
 }
 
 // EditMessage updates an existing message's text. Only the author may edit, and
 // not a deleted message (enforced in the repo). Returns the updated message and
 // the chat's participant IDs for broadcast.
-func (s *ChatService) EditMessage(ctx context.Context, msgID, editorID int64, content string) (*dto.MessageResponse, []int64, error) {
+func (s *ChatService) EditMessage(ctx context.Context, chatID, msgID, editorID int64, content string) (*dto.MessageResponse, []int64, error) {
 	content = strings.TrimSpace(content)
 	if err := validateMessageContent(content, false); err != nil {
 		return nil, nil, err
 	}
 
-	updated, targetIDs, err := s.repo.EditMessage(ctx, msgID, editorID, content)
+	updated, targetIDs, err := s.repo.EditMessage(ctx, chatID, msgID, editorID, content)
 	if err != nil {
 		return nil, nil, mapChatRepoError(err)
 	}
@@ -132,8 +155,9 @@ func (s *ChatService) EditMessage(ctx context.Context, msgID, editorID int64, co
 
 // DeleteMessage soft-deletes a message (author only). Returns the chat ID and
 // participant IDs for broadcast.
-func (s *ChatService) DeleteMessage(ctx context.Context, msgID, editorID int64) (int64, []int64, error) {
-	chatID, targetIDs, err := s.repo.DeleteMessage(ctx, msgID, editorID)
+func (s *ChatService) DeleteMessage(ctx context.Context, chatID, msgID, editorID int64) (int64, []int64, error) {
+	// repo вернёт тот же chatID (он же проверил принадлежность) — используем param.
+	_, targetIDs, err := s.repo.DeleteMessage(ctx, chatID, msgID, editorID)
 	if err != nil {
 		return 0, nil, mapChatRepoError(err)
 	}
@@ -192,6 +216,7 @@ func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageRespon
 		MessageType: m.MessageType,
 		Attachment:  attachment,
 		ReplyTo:     mapMessagePreview(m.ReplyTo),
+		RequestID:   m.RequestID,
 		EditedAt:    m.EditedAt,
 		IsDeleted:   isDeleted,
 		CreatedAt:   m.CreatedAt,
@@ -258,7 +283,7 @@ func (s *ChatService) mapMeetupToResponse(m *domain.Meetup) *dto.MeetupResponse 
 
 func (s *ChatService) MarkAsRead(ctx context.Context, chatID, userID, lastReadMessageID int64) ([]int64, error) {
 	if err := s.repo.MarkAsRead(ctx, chatID, userID, lastReadMessageID); err != nil {
-		return nil, err
+		return nil, mapChatRepoError(err) // не-участник => ErrForbidden, как в SendMessage
 	}
 	_ = s.cache.InvalidateUserChats(ctx, userID) // best-effort; cache layer logs failures
 
@@ -276,7 +301,7 @@ func (s *ChatService) MarkAsRead(ctx context.Context, chatID, userID, lastReadMe
 // is kept via %w for logging and errors.Is.
 func mapChatRepoError(err error) error {
 	switch {
-	case errors.Is(err, repo.ErrNotChatMember), errors.Is(err, repo.ErrNotMessageAuthor):
+	case errors.Is(err, repo.ErrNotChatMember), errors.Is(err, repo.ErrNotMessageAuthor), errors.Is(err, repo.ErrFileNotOwned):
 		return fmt.Errorf("chat access denied: %w", ErrForbidden)
 	case errors.Is(err, repo.ErrChatReadOnly):
 		return fmt.Errorf("chat: %w", ErrChatReadOnly)

@@ -33,6 +33,13 @@ func (r *ProfileRepo) GetByUserID(ctx context.Context, userID int64) (*domain.Pr
 }
 
 func (r *ProfileRepo) UpdateProfile(ctx context.Context, profile *domain.Profile) (*domain.Profile, error) {
+	// Аватар должен принадлежать владельцу профиля и быть изображением.
+	if profile.AvatarFileID.Valid {
+		if err := imageFileOwnedBy(ctx, r.db, profile.AvatarFileID.UUID, profile.UserID); err != nil {
+			return nil, err
+		}
+	}
+
 	_, err := r.db.NewInsert().
 		Model(profile).
 		On("CONFLICT (user_id) DO UPDATE").

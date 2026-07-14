@@ -37,6 +37,7 @@ type Message struct {
 	MessageType      string        `bun:"message_type,notnull,default:'text'"`
 	ReplyToMessageID *int64        `bun:"reply_to_message_id"`
 	FileID           uuid.NullUUID `bun:"file_id,type:uuid"`
+	RequestID        *string       `bun:"request_id"`
 	EditedAt         *time.Time    `bun:"edited_at"`
 	DeletedAt        *time.Time    `bun:"deleted_at"`
 	CreatedAt        time.Time     `bun:",nullzero,notnull,default:current_timestamp"`

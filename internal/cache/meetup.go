@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 // meetupSnapshot — то, что лежит в кеше: инвариантный (одинаковый для всех) DTO
@@ -45,8 +45,13 @@ func (c *MeetupCache) Meetup(ctx context.Context, meetupID, userID int64, load f
 		return nil, err
 	}
 
-	out := snap.Response // копия значения: per-user IsMember не должен попасть в кеш
+	out := snap.Response // копия значения: per-user поля не должны попасть в кеш
 	out.IsMember = slices.Contains(snap.MemberIDs, userID)
+	// invite_token — секрет вступления, виден только создателю. Снапшот в кеше
+	// хранит полный токен (caller-invariant); прячем его на копии при чтении.
+	if out.CreatorID != userID {
+		out.InviteToken = ""
+	}
 	return &out, nil
 }
 

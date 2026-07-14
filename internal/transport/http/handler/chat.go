@@ -2,18 +2,14 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
-
-	"github.com/go-chi/chi/v5"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
 )
 
 type ChatHandler struct {
@@ -38,9 +34,8 @@ func NewChatHandler(service *service.ChatService, presence *service.PresenceServ
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats [get]
 func (h *ChatHandler) GetUserChats(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
@@ -68,16 +63,13 @@ func (h *ChatHandler) GetUserChats(w http.ResponseWriter, r *http.Request) {
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats/{id}/messages [get]
 func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-	chatID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id"), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -112,15 +104,13 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats/{id}/presence [get]
 func (h *ChatHandler) GetChatPresence(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	chatID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id: %w", service.ErrInvalidInput), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -149,6 +139,9 @@ type SendMessageRequest struct {
 	Content          string  `json:"content" example:"Привет, как дела?"`
 	ReplyToMessageID *int64  `json:"reply_to_message_id,omitempty" example:"42"`
 	FileID           *string `json:"file_id,omitempty" example:"6f5e4d3c-2b1a-..."`
+	// RequestID — клиентский idempotency key (UUID). Повторный POST с тем же
+	// request_id не создаёт дубль, а возвращает уже созданное сообщение (200).
+	RequestID *string `json:"request_id,omitempty" example:"a1b2c3d4-..."`
 }
 
 type EditMessageRequest struct {
@@ -170,16 +163,13 @@ type EditMessageRequest struct {
 // @Failure     500     {object}  response.ErrorResponse "Внутренняя ошибка сервера"
 // @Router      /v1/chats/{id}/messages [post]
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-	chatID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid chat id"), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
@@ -189,15 +179,22 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, targetIDs, err := h.service.SendMessage(r.Context(), chatID, userID, req.Content, req.ReplyToMessageID, req.FileID)
+	msg, targetIDs, created, err := h.service.SendMessage(r.Context(), chatID, userID, req.Content, req.ReplyToMessageID, req.FileID, req.RequestID)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
 	}
 
-	go h.broadcastMessageEvent(websocket.EventNewMessage, msg, targetIDs)
+	// Идемпотентный повтор (тот же request_id): сообщение уже создано — не
+	// рассылаем его снова и отвечаем 200 с существующим вместо 201.
+	status := http.StatusCreated
+	if created {
+		go h.broadcastMessageEvent(websocket.EventNewMessage, msg, targetIDs)
+	} else {
+		status = http.StatusOK
+	}
 
-	response.JSON(w, http.StatusCreated, msg)
+	response.JSON(w, status, msg)
 }
 
 // EditMessage
@@ -217,15 +214,18 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 // @Failure     404       {object}  response.ErrorResponse "Сообщение не найдено"
 // @Router      /v1/chats/{id}/messages/{messageId} [patch]
 func (h *ChatHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageId"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid message id: %w", service.ErrInvalidInput), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
+		return
+	}
+
+	messageID, ok := pathInt64(w, r, "messageId", h.log)
+	if !ok {
 		return
 	}
 
@@ -235,7 +235,7 @@ func (h *ChatHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, targetIDs, err := h.service.EditMessage(r.Context(), messageID, userID, req.Content)
+	msg, targetIDs, err := h.service.EditMessage(r.Context(), chatID, messageID, userID, req.Content)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
@@ -260,19 +260,22 @@ func (h *ChatHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
 // @Failure     404       {object}  response.ErrorResponse "Сообщение не найдено"
 // @Router      /v1/chats/{id}/messages/{messageId} [delete]
 func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := requireUserID(w, r, h.log)
 	if !ok {
-		response.RespondError(w, service.ErrUnauthorized, h.log)
 		return
 	}
 
-	messageID, err := strconv.ParseInt(chi.URLParam(r, "messageId"), 10, 64)
-	if err != nil {
-		response.RespondError(w, fmt.Errorf("invalid message id: %w", service.ErrInvalidInput), h.log)
+	chatID, ok := pathInt64(w, r, "id", h.log)
+	if !ok {
 		return
 	}
 
-	chatID, targetIDs, err := h.service.DeleteMessage(r.Context(), messageID, userID)
+	messageID, ok := pathInt64(w, r, "messageId", h.log)
+	if !ok {
+		return
+	}
+
+	_, targetIDs, err := h.service.DeleteMessage(r.Context(), chatID, messageID, userID)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return

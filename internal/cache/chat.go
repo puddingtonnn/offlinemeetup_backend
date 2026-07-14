@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 // ChatCache кеширует списки чатов по пользователям. Владеет ключом, TTL и

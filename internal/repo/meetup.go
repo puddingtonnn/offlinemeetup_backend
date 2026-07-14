@@ -9,9 +9,37 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
 	"github.com/uptrace/bun"
 )
+
+// MeetupQuery is the repo-owned search criteria for List. It is deliberately a
+// plain struct with no json tags: how an HTTP client serializes a request is a
+// transport concern, so the SQL layer must not depend on the wire DTO. The
+// service maps dto.MeetupFilter into this at its boundary (keeping the arrow
+// transport→service→repo, not repo→transport).
+type MeetupQuery struct {
+	Lat, Lng    float64
+	Radius      int
+	Limit       int
+	Offset      int
+	Tags        []int64
+	OnlyMy      bool
+	OnlyCreated bool
+	ExcludeOwn  bool
+	ShowPast    bool
+}
+
+// MeetupAuth is the minimal projection needed to authorize a mutation on a
+// meetup, without hydrating the full creator/participants/tags graph GetByID
+// loads. Join/Leave/Delete read only a few scalar columns, so one cheap indexed
+// read replaces several relation round-trips (and a whole participant roster).
+type MeetupAuth struct {
+	CreatorID int64
+	IsPublic  bool
+	Status    string
+	EndTime   time.Time
+	IsMember  bool
+}
 
 type MeetupRepo struct {
 	db       *bun.DB
@@ -29,7 +57,15 @@ func (r *MeetupRepo) Create(ctx context.Context, meetup *domain.Meetup, chat *do
 	}
 	defer tx.Rollback()
 
-	meetup.ParticipantsCount = 1
+	// participants_count ведёт триггер БД (trg_participants_count) на вставку
+	// creator-участника ниже — руками не трогаем, иначе двойной счёт.
+
+	// Обложка должна принадлежать создателю и быть изображением.
+	if meetup.CoverFileID.Valid {
+		if err := imageFileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID); err != nil {
+			return nil, err
+		}
+	}
 
 	_, err = tx.NewInsert().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).Returning("id, created_at, invite_token").Exec(ctx)
 	if err != nil {
@@ -115,6 +151,26 @@ func (r *MeetupRepo) GetByID(ctx context.Context, id int64, currentUserID int64)
 	return &meetup, nil
 }
 
+// GetForAuth loads only the scalar columns (plus is_member) needed to authorize
+// a mutation, avoiding GetByID's relation fan-out. Returns (nil, nil) when the
+// meetup does not exist, mirroring GetByID so the service maps it to ErrNotFound.
+func (r *MeetupRepo) GetForAuth(ctx context.Context, id, userID int64) (*MeetupAuth, error) {
+	var a MeetupAuth
+	err := r.db.NewSelect().
+		TableExpr("meetups AS m").
+		ColumnExpr("m.creator_id, m.is_public, m.status, m.end_time").
+		ColumnExpr("EXISTS (SELECT 1 FROM participants p WHERE p.meetup_id = m.id AND p.user_id = ?) AS is_member", userID).
+		Where("m.id = ?", id).
+		Scan(ctx, &a.CreatorID, &a.IsPublic, &a.Status, &a.EndTime, &a.IsMember)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading meetup %d for auth: %w", id, err)
+	}
+	return &a, nil
+}
+
 func (r *MeetupRepo) GetByInviteToken(ctx context.Context, token uuid.UUID, currentUserID int64) (*domain.Meetup, error) {
 	var meetup domain.Meetup
 
@@ -138,7 +194,7 @@ func (r *MeetupRepo) GetByInviteToken(ctx context.Context, token uuid.UUID, curr
 	return &meetup, nil
 }
 
-func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error) {
+func (r *MeetupRepo) List(ctx context.Context, filter MeetupQuery, currentUserID int64) ([]domain.Meetup, error) {
 	var meetups []domain.Meetup
 
 	q := r.db.NewSelect().Model(&meetups)
@@ -220,7 +276,22 @@ func (r *MeetupRepo) List(ctx context.Context, filter dto.MeetupFilter, currentU
 
 func (r *MeetupRepo) Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		_, err := tx.NewUpdate().Model(meetup).Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).WherePK().Exec(ctx)
+		// Новая обложка должна принадлежать создателю и быть изображением.
+		if meetup.CoverFileID.Valid {
+			if err := imageFileOwnedBy(ctx, tx, meetup.CoverFileID.UUID, meetup.CreatorID); err != nil {
+				return err
+			}
+		}
+
+		// Обновляем только редактируемые поля. Model(meetup) без ExcludeColumn
+		// переписал бы ВСЕ колонки значениями из ранее прочитанного existing —
+		// включая participants_count (гонка lost-update с параллельным Join/
+		// Leave) и неизменяемые creator_id/created_at/status.
+		_, err := tx.NewUpdate().Model(meetup).
+			ExcludeColumn("participants_count", "status", "creator_id", "created_at").
+			Value("location", "ST_GeomFromText(?, 4326)", meetup.Location.String()).
+			WherePK().
+			Exec(ctx)
 		if err != nil {
 			return err
 		}
@@ -302,18 +373,10 @@ func (r *MeetupRepo) Join(ctx context.Context, meetupID, userID int64) error {
 		return err
 	}
 	// Пользователь уже участник (в т.ч. при гонке двух одновременных join) —
-	// выходим без изменения счётчика и без добавления в чат.
+	// выходим без добавления в чат. ON CONFLICT DO NOTHING не вставляет строку,
+	// поэтому триггер счётчика тоже не срабатывает (счётчик остаётся верным).
 	if inserted == 0 {
 		return tx.Commit()
-	}
-
-	_, err = tx.NewUpdate().
-		Table("meetups").
-		Set("participants_count = participants_count + 1").
-		Where("id = ?", meetupID).
-		Exec(ctx)
-	if err != nil {
-		return err
 	}
 
 	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
@@ -361,12 +424,19 @@ func (r *MeetupRepo) Leave(ctx context.Context, meetupID, userID int64) error {
 		return nil
 	}
 
-	_, err = tx.NewUpdate().
-		Table("meetups").
-		Set("participants_count = participants_count - 1").
-		Where("id = ? AND participants_count > 0", meetupID).
-		Exec(ctx)
+	// participants_count ведёт триггер БД на DELETE participants — руками не
+	// трогаем. Симметрично Join: покидая митап, пользователь должен потерять
+	// доступ к групповому чату — иначе остаётся в chat_participants и продолжает
+	// читать/писать (проверки членства идут через EXISTS). ErrNoRows (у митапа
+	// нет чата) — не ошибка.
+	chat, err := r.chatRepo.GetChatByMeetupID(ctx, tx, meetupID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return tx.Commit()
+		}
+		return err
+	}
+	if err := r.chatRepo.RemoveParticipant(ctx, tx, chat.ID, userID); err != nil {
 		return err
 	}
 

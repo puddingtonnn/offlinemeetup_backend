@@ -71,9 +71,9 @@ func (mr *MockChatRepositoryMockRecorder) CreateGroupChat(ctx, tx, chat any) *go
 }
 
 // DeleteMessage mocks base method.
-func (m *MockChatRepository) DeleteMessage(ctx context.Context, msgID, editorID int64) (int64, []int64, error) {
+func (m *MockChatRepository) DeleteMessage(ctx context.Context, chatID, msgID, editorID int64) (int64, []int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteMessage", ctx, msgID, editorID)
+	ret := m.ctrl.Call(m, "DeleteMessage", ctx, chatID, msgID, editorID)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].([]int64)
 	ret2, _ := ret[2].(error)
@@ -81,15 +81,15 @@ func (m *MockChatRepository) DeleteMessage(ctx context.Context, msgID, editorID 
 }
 
 // DeleteMessage indicates an expected call of DeleteMessage.
-func (mr *MockChatRepositoryMockRecorder) DeleteMessage(ctx, msgID, editorID any) *gomock.Call {
+func (mr *MockChatRepositoryMockRecorder) DeleteMessage(ctx, chatID, msgID, editorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMessage", reflect.TypeOf((*MockChatRepository)(nil).DeleteMessage), ctx, msgID, editorID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMessage", reflect.TypeOf((*MockChatRepository)(nil).DeleteMessage), ctx, chatID, msgID, editorID)
 }
 
 // EditMessage mocks base method.
-func (m *MockChatRepository) EditMessage(ctx context.Context, msgID, editorID int64, content string) (*domain.Message, []int64, error) {
+func (m *MockChatRepository) EditMessage(ctx context.Context, chatID, msgID, editorID int64, content string) (*domain.Message, []int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EditMessage", ctx, msgID, editorID, content)
+	ret := m.ctrl.Call(m, "EditMessage", ctx, chatID, msgID, editorID, content)
 	ret0, _ := ret[0].(*domain.Message)
 	ret1, _ := ret[1].([]int64)
 	ret2, _ := ret[2].(error)
@@ -97,9 +97,9 @@ func (m *MockChatRepository) EditMessage(ctx context.Context, msgID, editorID in
 }
 
 // EditMessage indicates an expected call of EditMessage.
-func (mr *MockChatRepositoryMockRecorder) EditMessage(ctx, msgID, editorID, content any) *gomock.Call {
+func (mr *MockChatRepositoryMockRecorder) EditMessage(ctx, chatID, msgID, editorID, content any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EditMessage", reflect.TypeOf((*MockChatRepository)(nil).EditMessage), ctx, msgID, editorID, content)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EditMessage", reflect.TypeOf((*MockChatRepository)(nil).EditMessage), ctx, chatID, msgID, editorID, content)
 }
 
 // GetChatByMeetupID mocks base method.
@@ -192,13 +192,14 @@ func (mr *MockChatRepositoryMockRecorder) MarkAsRead(ctx, chatID, userID, lastRe
 }
 
 // SaveMessage mocks base method.
-func (m *MockChatRepository) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, error) {
+func (m *MockChatRepository) SaveMessage(ctx context.Context, msg *domain.Message) (*domain.Message, []int64, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SaveMessage", ctx, msg)
 	ret0, _ := ret[0].(*domain.Message)
 	ret1, _ := ret[1].([]int64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret2, _ := ret[2].(bool)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
 // SaveMessage indicates an expected call of SaveMessage.

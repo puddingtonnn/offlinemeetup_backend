@@ -27,7 +27,7 @@ func RespondValidation(w http.ResponseWriter, fields map[string]string) {
 	})
 }
 
-func JSON(w http.ResponseWriter, status int, payload interface{}) {
+func JSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if payload != nil {
@@ -37,8 +37,6 @@ func JSON(w http.ResponseWriter, status int, payload interface{}) {
 
 // RespondError - центральное место обработки ошибок
 func RespondError(w http.ResponseWriter, err error, log *slog.Logger) {
-	log.Error("Request failed", slog.String("err", err.Error()))
-
 	var statusCode int
 	var msg string
 
@@ -70,6 +68,16 @@ func RespondError(w http.ResponseWriter, err error, log *slog.Logger) {
 	default:
 		statusCode = http.StatusInternalServerError
 		msg = "Internal Server Error"
+	}
+
+	// Уровень лога зависит от того, кто виноват: 5xx — проблема сервера, её нужно
+	// видеть в алертах; 4xx (плохой ввод, not found, протухший токен) — ожидаемый
+	// клиентский control-flow. Логировать 4xx как Error значит утопить настоящие
+	// ошибки и позволить клиенту раздувать error-rate.
+	if statusCode >= http.StatusInternalServerError {
+		log.Error("request failed", slog.Int("status", statusCode), slog.String("err", err.Error()))
+	} else {
+		log.Info("request rejected", slog.Int("status", statusCode), slog.String("err", err.Error()))
 	}
 
 	JSON(w, statusCode, ErrorResponse{Error: msg})

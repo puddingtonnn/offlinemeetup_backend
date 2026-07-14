@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 // TagCache кеширует глобальный список тегов под одним ключом. Теги почти

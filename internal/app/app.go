@@ -32,6 +32,7 @@ type App struct {
 	router http.Handler
 	DB     *bun.DB
 	hub    *websocket.Hub
+	rdb    *redis.Client
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
@@ -80,8 +81,9 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	chatRepo := repo.NewChatRepo(db)
 	meetupRepo := repo.NewMeetupRepo(db, chatRepo)
 	fileRepo := repo.NewFileRepo(db)
+	refreshRepo := repo.NewRefreshTokenRepo(db)
 
-	authService := service.NewAuthService(userRepo, cfg)
+	authService := service.NewAuthService(userRepo, refreshRepo, cfg)
 	profileCache := cache.NewProfileCache(cached, cacheMetrics, cfg.CacheTTLProfile)
 	profileService := service.NewProfileService(profileRepo, userRepo, profileCache, cfg.S3PublicURL)
 	meetupCache := cache.NewMeetupCache(cached, cacheMetrics, cfg.CacheTTLMeetup)
@@ -98,12 +100,12 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	profileHandler := handler.NewProfileHandler(profileService, log)
 	meetupHandler := handler.NewMeetupHandler(meetupService, log)
 	tagHandler := handler.NewTagHandler(tagService, log)
-	geoHandler := handler.NewGeoHandler(geoService)
+	geoHandler := handler.NewGeoHandler(geoService, log)
 	chatHandler := handler.NewChatHandler(chatService, presenceService, hub, log)
 	wsHandler := websocket.NewWebSocketHandler(hub, log, chatService, profileService, presenceService, cfg.WSAllowedOrigins)
-	fileHandler := handler.NewFileHandler(fileService, log)
+	fileHandler := handler.NewFileHandler(fileService, cfg.MaxUploadSize, log)
 
-	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, authService, metricsHandler, cfg)
+	router := transport.NewRouter(authHandler, profileHandler, meetupHandler, tagHandler, geoHandler, chatHandler, wsHandler, fileHandler, authService, metricsHandler, rdb, log, cfg)
 
 	return &App{
 		cfg:    cfg,
@@ -111,6 +113,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 		router: router,
 		DB:     db,
 		hub:    hub,
+		rdb:    rdb,
 	}
 }
 
@@ -119,11 +122,11 @@ func (a *App) Run(ctx context.Context) error {
 
 	// Subscribe this instance to the WS broadcast channel before serving so no
 	// early broadcast is missed. Local delivery happens ONLY through this
-	// consumer, so a failure here (Redis unreachable) means real-time WS delivery
-	// is down until Redis recovers — Redis is a hard dependency of the chat, same
-	// as it already is for caching. We log and keep serving REST regardless.
+	// consumer, so without it a node accepts WS connections but never delivers
+	// anything. Redis is a hard dependency of the chat (same as for caching and
+	// rate limiting), so we fail fast instead of serving a silently-degraded node.
 	if err := a.hub.StartConsumer(ctx); err != nil {
-		a.log.Error("failed to start ws broadcast consumer", slog.Any("err", err))
+		return fmt.Errorf("failed to start ws broadcast consumer: %w", err)
 	}
 
 	server := &http.Server{
@@ -143,17 +146,20 @@ func (a *App) Run(ctx context.Context) error {
 	case err := <-serverErr:
 		return fmt.Errorf("server failed to start: %w", err)
 	case <-ctx.Done():
-		a.log.Info("Shutting down server")
+		a.log.Info("Shutting down server", slog.String("port", a.cfg.AppPort))
 	}
-
-	<-ctx.Done()
-	a.log.Info("Shutting down server", slog.String("port", a.cfg.AppPort))
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("server shutdown failed: %w", err)
+	}
+
+	// The hub/consumer goroutines stop on ctx cancellation (already done here).
+	// Release the shared Redis client so its pool doesn't leak at exit.
+	if err := a.rdb.Close(); err != nil {
+		a.log.Error("closing redis", slog.Any("err", err))
 	}
 
 	return nil

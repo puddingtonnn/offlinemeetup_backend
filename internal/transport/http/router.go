@@ -1,7 +1,9 @@
 package http
 
 import (
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
@@ -11,6 +13,7 @@ import (
 	_ "github.com/puddingtonnn/offlinemeetup_backend/docs"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
 	authMiddleware "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
+	"github.com/redis/go-redis/v9"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
@@ -24,11 +27,14 @@ func NewRouter(authHandler *handler.AuthHandler,
 	fileHandler *handler.FileHandler,
 	statusChecker authMiddleware.UserStatusChecker,
 	metricsHandler http.Handler,
+	rdb *redis.Client,
+	log *slog.Logger,
 	cfg *config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
+	router.Use(authMiddleware.SecurityHeaders)
 	router.Use(authMiddleware.BodyLimit(1 << 20)) // 1 MB на JSON-запросы
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -44,13 +50,19 @@ func NewRouter(authHandler *handler.AuthHandler,
 
 	router.Route("/v1", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
+			// Брутфорс/перебор по логину и колбэкам — ограничиваем по IP.
+			r.Use(authMiddleware.RateLimiter(rdb, log, "auth", 20, time.Minute, cfg.TrustProxyHeaders))
+
 			r.Post("/auth/google", authHandler.GoogleLogin)
+			r.Post("/auth/refresh", authHandler.Refresh)
+			r.Post("/auth/logout", authHandler.Logout)
 			r.Route("/auth/telegram", func(r chi.Router) {
 				r.Get("/login", authHandler.ServeTelegramLoginPage)
 				r.Get("/callback", authHandler.TelegramCallBack)
 			})
-			r.Get("/tags", tagHandler.List)
 		})
+
+		r.Get("/tags", tagHandler.List)
 
 		r.Route("/meetups", func(r chi.Router) {
 			r.Group(func(r chi.Router) {
@@ -85,7 +97,8 @@ func NewRouter(authHandler *handler.AuthHandler,
 			})
 			r.Get("/geo/suggest", geoHandler.Suggest)
 
-			r.Post("/files/upload", fileHandler.Upload)
+			r.With(authMiddleware.RateLimiter(rdb, log, "upload", 30, time.Minute, cfg.TrustProxyHeaders)).
+				Post("/files/upload", fileHandler.Upload)
 		})
 
 		r.Route("/chats", func(r chi.Router) {
@@ -106,9 +119,13 @@ func NewRouter(authHandler *handler.AuthHandler,
 		})
 	})
 
-	router.Get("/swagger/*", httpSwagger.Handler(
-		httpSwagger.URL("/swagger/doc.json"),
-	))
+	// Swagger раскрывает всю карту API — отдаём его только в dev/local, как и
+	// dev-login, чтобы не светить поверхность атаки в проде.
+	if cfg.Env == "local" || cfg.Env == "dev" {
+		router.Get("/swagger/*", httpSwagger.Handler(
+			httpSwagger.URL("/swagger/doc.json"),
+		))
+	}
 
 	return router
 }

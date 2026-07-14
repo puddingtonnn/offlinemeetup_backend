@@ -2,19 +2,25 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 )
+
+// maxMeetupOffset — верхняя граница пагинационного сдвига для списка митапов.
+const maxMeetupOffset = 100_000
 
 type MeetupRepository interface {
 	Create(ctx context.Context, meetup *domain.Meetup, chat *domain.Chat, tagIDs []int64) (*domain.Meetup, error)
 	GetByID(ctx context.Context, id int64, currentUserID int64) (*domain.Meetup, error)
+	GetForAuth(ctx context.Context, id, userID int64) (*repo.MeetupAuth, error)
 	GetByInviteToken(ctx context.Context, token uuid.UUID, currentUserID int64) (*domain.Meetup, error)
-	List(ctx context.Context, filter dto.MeetupFilter, currentUserID int64) ([]domain.Meetup, error)
+	List(ctx context.Context, filter repo.MeetupQuery, currentUserID int64) ([]domain.Meetup, error)
 	Update(ctx context.Context, meetup *domain.Meetup, newTagIDs []int64) error
 	Delete(ctx context.Context, id int64) error
 	Join(ctx context.Context, meetupID, userID int64) error
@@ -78,9 +84,10 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 
 	if req.CoverFileID != nil && *req.CoverFileID != "" {
 		id, err := uuid.Parse(*req.CoverFileID)
-		if err == nil {
-			meetup.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
+		if err != nil {
+			return nil, fmt.Errorf("invalid cover_file_id: %w", ErrInvalidInput)
 		}
+		meetup.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
 	chat := &domain.Chat{
@@ -89,7 +96,7 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 
 	created, err := s.repo.Create(ctx, meetup, chat, req.TagIDs)
 	if err != nil {
-		return nil, err
+		return nil, mapMeetupRepoError(err)
 	}
 
 	_ = s.chatCache.InvalidateUserChats(ctx, userID) // best-effort; cache layer logs failures
@@ -99,6 +106,18 @@ func (s *MeetupService) CreateMeetup(ctx context.Context, userID int64, req dto.
 
 func (s *MeetupService) mapToResponse(m *domain.Meetup) *dto.MeetupResponse {
 	return mapMeetupToDTO(m, s.s3PublicURL)
+}
+
+// mapMeetupRepoError переводит инфра-sentinel'ы репозитория в доменные на границе
+// слоёв (как mapChatRepoError), чтобы хендлер вернул 403, а не 500.
+func mapMeetupRepoError(err error) error {
+	switch {
+	case errors.Is(err, repo.ErrFileNotOwned):
+		return fmt.Errorf("cover file: %w", ErrForbidden)
+	case errors.Is(err, repo.ErrFileNotImage):
+		return fmt.Errorf("cover file must be an image: %w", ErrInvalidInput)
+	}
+	return err
 }
 
 func (s *MeetupService) GetMeetup(ctx context.Context, id int64, userID int64) (*dto.MeetupResponse, error) {
@@ -126,14 +145,35 @@ func (s *MeetupService) GetMeetup(ctx context.Context, id int64, userID int64) (
 }
 
 func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dto.MeetupFilter) ([]*dto.MeetupResponse, error) {
-	if filter.Limit == 0 {
-		filter.Limit = 20
+	// Маппим транспортный DTO в критерий репозитория на границе сервиса: так SQL-
+	// слой не зависит от формата HTTP-запроса. Заодно применяем бизнес-клампы.
+	q := repo.MeetupQuery{
+		Lat:         filter.Lat,
+		Lng:         filter.Lng,
+		Radius:      filter.Radius,
+		Limit:       filter.Limit,
+		Offset:      filter.Offset,
+		Tags:        filter.Tags,
+		OnlyMy:      filter.OnlyMy,
+		OnlyCreated: filter.OnlyCreated,
+		ExcludeOwn:  filter.ExcludeOwn,
+		ShowPast:    filter.ShowPast,
 	}
-	if filter.Limit > 100 {
-		filter.Limit = 100
+	if q.Limit == 0 {
+		q.Limit = 20
+	}
+	if q.Limit > 100 {
+		q.Limit = 100
+	}
+	// Ограничиваем offset: бессмысленно большой сдвиг — это деградация запроса.
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	if q.Offset > maxMeetupOffset {
+		q.Offset = maxMeetupOffset
 	}
 
-	meetups, err := s.repo.List(ctx, filter, userID)
+	meetups, err := s.repo.List(ctx, q, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +181,7 @@ func (s *MeetupService) ListMeetups(ctx context.Context, userID int64, filter dt
 	response := make([]*dto.MeetupResponse, len(meetups))
 	for i, m := range meetups {
 		response[i] = s.mapToResponse(&m)
+		gateInviteToken(response[i], userID) // токен виден только создателю
 	}
 	return response, nil
 }
@@ -164,6 +205,11 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 		existing.Description = *req.Description
 	}
 	if req.IsPublic != nil {
+		// При переходе public→private ротируем инвайт-токен: любой токен,
+		// собранный пока митап был публичным, перестаёт работать на вступление.
+		if existing.IsPublic && !*req.IsPublic {
+			existing.InviteToken = uuid.New()
+		}
 		existing.IsPublic = *req.IsPublic
 	}
 	if req.StartTime != nil {
@@ -186,9 +232,10 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 			existing.CoverFileID = uuid.NullUUID{}
 		} else {
 			id, err := uuid.Parse(*req.CoverFileID)
-			if err == nil {
-				existing.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
+			if err != nil {
+				return nil, fmt.Errorf("invalid cover_file_id: %w", ErrInvalidInput)
 			}
+			existing.CoverFileID = uuid.NullUUID{UUID: id, Valid: true}
 		}
 	}
 
@@ -198,7 +245,7 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 	}
 
 	if err := s.repo.Update(ctx, existing, tagIDs); err != nil {
-		return nil, err
+		return nil, mapMeetupRepoError(err)
 	}
 
 	_ = s.meetupCache.InvalidateMeetup(ctx, meetupID) // best-effort; cache layer logs failures
@@ -207,7 +254,8 @@ func (s *MeetupService) UpdateMeetup(ctx context.Context, userID int64, meetupID
 }
 
 func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID int64) error {
-	existing, err := s.repo.GetByID(ctx, meetupID, userID)
+	// Авторизация читает только скаляры — GetForAuth вместо полной гидрации GetByID.
+	existing, err := s.repo.GetForAuth(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}
@@ -228,7 +276,7 @@ func (s *MeetupService) DeleteMeetup(ctx context.Context, userID int64, meetupID
 }
 
 func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) error {
-	meetup, err := s.repo.GetByID(ctx, meetupID, userID)
+	meetup, err := s.repo.GetForAuth(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}
@@ -263,7 +311,7 @@ func (s *MeetupService) JoinMeetup(ctx context.Context, userID, meetupID int64) 
 }
 
 func (s *MeetupService) LeaveMeetup(ctx context.Context, userID, meetupID int64) error {
-	meetup, err := s.repo.GetByID(ctx, meetupID, userID)
+	meetup, err := s.repo.GetForAuth(ctx, meetupID, userID)
 	if err != nil {
 		return err
 	}

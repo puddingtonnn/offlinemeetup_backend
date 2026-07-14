@@ -85,3 +85,84 @@ func (mr *MockAuthRepositoryMockRecorder) GetBySocialID(ctx, provider, socialID 
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBySocialID", reflect.TypeOf((*MockAuthRepository)(nil).GetBySocialID), ctx, provider, socialID)
 }
+
+// MockRefreshTokenRepository is a mock of RefreshTokenRepository interface.
+type MockRefreshTokenRepository struct {
+	ctrl     *gomock.Controller
+	recorder *MockRefreshTokenRepositoryMockRecorder
+	isgomock struct{}
+}
+
+// MockRefreshTokenRepositoryMockRecorder is the mock recorder for MockRefreshTokenRepository.
+type MockRefreshTokenRepositoryMockRecorder struct {
+	mock *MockRefreshTokenRepository
+}
+
+// NewMockRefreshTokenRepository creates a new mock instance.
+func NewMockRefreshTokenRepository(ctrl *gomock.Controller) *MockRefreshTokenRepository {
+	mock := &MockRefreshTokenRepository{ctrl: ctrl}
+	mock.recorder = &MockRefreshTokenRepositoryMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRefreshTokenRepository) EXPECT() *MockRefreshTokenRepositoryMockRecorder {
+	return m.recorder
+}
+
+// Create mocks base method.
+func (m *MockRefreshTokenRepository) Create(ctx context.Context, token *domain.RefreshToken) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Create", ctx, token)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Create indicates an expected call of Create.
+func (mr *MockRefreshTokenRepositoryMockRecorder) Create(ctx, token any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockRefreshTokenRepository)(nil).Create), ctx, token)
+}
+
+// GetByHash mocks base method.
+func (m *MockRefreshTokenRepository) GetByHash(ctx context.Context, hash string) (*domain.RefreshToken, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByHash", ctx, hash)
+	ret0, _ := ret[0].(*domain.RefreshToken)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByHash indicates an expected call of GetByHash.
+func (mr *MockRefreshTokenRepositoryMockRecorder) GetByHash(ctx, hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByHash", reflect.TypeOf((*MockRefreshTokenRepository)(nil).GetByHash), ctx, hash)
+}
+
+// Revoke mocks base method.
+func (m *MockRefreshTokenRepository) Revoke(ctx context.Context, id int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Revoke", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Revoke indicates an expected call of Revoke.
+func (mr *MockRefreshTokenRepositoryMockRecorder) Revoke(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Revoke", reflect.TypeOf((*MockRefreshTokenRepository)(nil).Revoke), ctx, id)
+}
+
+// RevokeAllForUser mocks base method.
+func (m *MockRefreshTokenRepository) RevokeAllForUser(ctx context.Context, userID int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeAllForUser", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeAllForUser indicates an expected call of RevokeAllForUser.
+func (mr *MockRefreshTokenRepositoryMockRecorder) RevokeAllForUser(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAllForUser", reflect.TypeOf((*MockRefreshTokenRepository)(nil).RevokeAllForUser), ctx, userID)
+}

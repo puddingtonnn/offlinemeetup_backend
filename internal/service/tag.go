@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 )
 
 type TagRepository interface {

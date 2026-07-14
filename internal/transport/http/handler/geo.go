@@ -1,19 +1,22 @@
 package handler
 
 import (
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/dto"
-	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
+	"log/slog"
 	"net/http"
 	"strconv"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
 )
 
 type GeoHandler struct {
 	service *service.GeoService
+	log     *slog.Logger
 }
 
-func NewGeoHandler(service *service.GeoService) *GeoHandler {
-	return &GeoHandler{service: service}
+func NewGeoHandler(service *service.GeoService, log *slog.Logger) *GeoHandler {
+	return &GeoHandler{service: service, log: log}
 }
 
 // Suggest
@@ -41,20 +44,20 @@ func (h *GeoHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 		lon, errLon := strconv.ParseFloat(lonStr, 64)
 
 		if errLat != nil || errLon != nil {
-			http.Error(w, "invalid coordinates", http.StatusBadRequest)
+			response.RespondError(w, service.ErrInvalidInput, h.log)
 			return
 		}
 
-		suggestions, err = h.service.SuggestByGeo(lat, lon)
+		suggestions, err = h.service.SuggestByGeo(r.Context(), lat, lon)
 	} else if len(addressPart) >= 2 {
-		suggestions, err = h.service.SuggestAddress(addressPart)
+		suggestions, err = h.service.SuggestAddress(r.Context(), addressPart)
 	} else {
-		response.JSON(w, http.StatusOK, []interface{}{})
+		response.JSON(w, http.StatusOK, []any{})
 		return
 	}
 
 	if err != nil {
-		http.Error(w, "External API error", http.StatusInternalServerError)
+		response.RespondError(w, service.ErrInternal, h.log)
 		return
 	}
 

@@ -32,6 +32,11 @@ type Hub struct {
 	broadcast   chan *BroadcastMessage
 	register    chan *Client
 	unregister  chan *Client
+	// done is closed by Run right before it returns on shutdown. After that no
+	// goroutine reads register/unregister/broadcast, so a client's teardown must
+	// stop blocking on unregister — it selects on done to bail out instead of
+	// leaking (and skipping presence cleanup) forever.
+	done chan struct{}
 
 	bus        MessageBus
 	pubChannel string
@@ -45,6 +50,7 @@ func NewHub(log *slog.Logger, bus MessageBus) *Hub {
 		broadcast:   make(chan *BroadcastMessage),
 		register:    make(chan *Client),
 		unregister:  make(chan *Client),
+		done:        make(chan struct{}),
 		userClients: make(map[int64]map[*Client]bool),
 		rooms:       make(map[int64]map[*Client]bool),
 		bus:         bus,
@@ -152,10 +158,14 @@ func (h *Hub) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			// Close done first: any client teardown that reaches unregister after
+			// this point takes its done branch instead of blocking on a channel we
+			// are about to stop reading.
+			close(h.done)
 			h.mu.Lock()
 			for _, clients := range h.userClients {
 				for client := range clients {
-					close(client.send)
+					client.stop()
 				}
 			}
 			h.mu.Unlock()
@@ -174,7 +184,7 @@ func (h *Hub) Run(ctx context.Context) {
 			if clients, ok := h.userClients[client.userID]; ok {
 				if _, exists := clients[client]; exists {
 					delete(clients, client)
-					close(client.send)
+					client.stop()
 
 					if len(clients) == 0 {
 						delete(h.userClients, client.userID)
@@ -222,7 +232,13 @@ func (h *Hub) trySend(client *Client, payload []byte) {
 		// Буфер клиента переполнен — считаем его "зависшим" и отписываем.
 		// Запускаем в отдельной горутине: trySend вызывается из горутины Run
 		// (под broadcast), а h.unregister читает та же горутина — прямая
-		// запись сюда привела бы к deadlock'у всего хаба.
-		go func() { h.unregister <- client }()
+		// запись сюда привела бы к deadlock'у всего хаба. Селект на done, чтобы
+		// при остановке хаба эта горутина не зависла навсегда.
+		safeGo(h.log, func() {
+			select {
+			case h.unregister <- client:
+			case <-h.done:
+			}
+		})
 	}
 }

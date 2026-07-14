@@ -22,6 +22,7 @@ type MessageResponse struct {
 	MessageType string              `json:"message_type"`
 	Attachment  *AttachmentResponse `json:"attachment,omitempty"`
 	ReplyTo     *MessagePreview     `json:"reply_to,omitempty"`
+	RequestID   *string             `json:"request_id,omitempty"`
 	EditedAt    *time.Time          `json:"edited_at,omitempty"`
 	IsDeleted   bool                `json:"is_deleted"`
 	CreatedAt   time.Time           `json:"created_at"`

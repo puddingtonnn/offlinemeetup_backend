@@ -64,10 +64,14 @@ func TestHub_Unregister(t *testing.T) {
 
 	hub.unregister <- client
 
-	// После отписки пользователь убран из карты, а его канал закрыт.
+	// После отписки пользователь убран из карты и больше не получает рассылок.
+	// (Канал send намеренно НЕ закрывается — у него несколько отправителей;
+	// teardown реального соединения идёт через отмену ctx, а не close.)
 	require.Eventually(t, func() bool { return !hub.hasUser(1) }, time.Second, 5*time.Millisecond)
-	_, ok := recvWithTimeout(t, client.send, time.Second)
-	assert.False(t, ok, "send channel must be closed after unregister")
+
+	hub.BroadcastToUsers([]int64{1}, []byte(`{"v":"after"}`))
+	_, ok := recvWithTimeout(t, client.send, 100*time.Millisecond)
+	assert.False(t, ok, "unregistered client must not receive broadcasts")
 }
 
 func TestHub_BroadcastToRoomsExcludesSender(t *testing.T) {
