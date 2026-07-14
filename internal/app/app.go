@@ -93,7 +93,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	geoService := service.NewGeoService(cfg.DaDataToken)
 	chatService := service.NewChatService(chatRepo, chatCache, cfg.S3PublicURL)
 	presenceStore := cache.NewRedisPresenceStore(rdb)
-	presenceService := service.NewPresenceService(presenceStore, chatService, cfg.PresenceTTL)
+	presenceService := service.NewPresenceService(presenceStore, chatService, profileRepo, cfg.PresenceTTL)
 	fileService := service.NewFileService(fileRepo, s3Client, cfg)
 
 	authHandler := handler.NewAuthHandler(authService, log)

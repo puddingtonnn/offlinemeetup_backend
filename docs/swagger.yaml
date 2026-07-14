@@ -20,6 +20,17 @@ definitions:
       url:
         type: string
     type: object
+  dto.AuthTokensResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      token_type:
+        type: string
+    type: object
   dto.ChatResponse:
     properties:
       id:
@@ -147,6 +158,8 @@ definitions:
         type: string
       reply_to:
         $ref: '#/definitions/dto.MessagePreview'
+      request_id:
+        type: string
       sender:
         $ref: '#/definitions/dto.ProfileResponse'
       sender_id:
@@ -156,6 +169,8 @@ definitions:
     properties:
       last_seen:
         type: integer
+      nickname:
+        type: string
       online:
         type: boolean
       user_id:
@@ -240,10 +255,21 @@ definitions:
       reply_to_message_id:
         example: 42
         type: integer
+      request_id:
+        description: |-
+          RequestID — клиентский idempotency key (UUID). Повторный POST с тем же
+          request_id не создаёт дубль, а возвращает уже созданное сообщение (200).
+        example: a1b2c3d4-...
+        type: string
     type: object
   handler.googleLoginRequest:
     properties:
       token:
+        type: string
+    type: object
+  handler.refreshRequest:
+    properties:
+      refresh_token:
         type: string
     type: object
   response.ErrorResponse:
@@ -285,6 +311,24 @@ paths:
       summary: Вход через Google
       tags:
       - Auth
+  /v1/auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Отзывает переданный refresh_token. Идемпотентно.
+      parameters:
+      - description: Refresh token
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/handler.refreshRequest'
+      responses:
+        "204":
+          description: No Content
+      summary: Выход
+      tags:
+      - Auth
   /v1/auth/me:
     get:
       description: Возвращает ID, email, роль и статус.
@@ -306,6 +350,32 @@ paths:
       security:
       - BearerAuth: []
       summary: Получить данные моего аккаунта
+      tags:
+      - Auth
+  /v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Принимает refresh_token, ротирует его и возвращает новую пару токенов.
+      parameters:
+      - description: Refresh token
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/handler.refreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AuthTokensResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Обновить токены
       tags:
       - Auth
   /v1/auth/telegram/callback:
@@ -575,7 +645,7 @@ paths:
       consumes:
       - multipart/form-data
       parameters:
-      - description: Файл
+      - description: Медиафайл
         in: formData
         name: file
         required: true
@@ -594,7 +664,7 @@ paths:
             $ref: '#/definitions/response.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Загрузить файл
+      summary: Загрузить медиафайл (фото/видео/аудио)
       tags:
       - Files
   /v1/geo/suggest:

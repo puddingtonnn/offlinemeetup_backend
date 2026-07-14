@@ -124,7 +124,7 @@ func (h *ChatHandler) GetChatPresence(w http.ResponseWriter, r *http.Request) {
 	// would cycle, since service imports dto).
 	out := make([]dto.PresenceResponse, 0, len(statuses))
 	for _, st := range statuses {
-		pr := dto.PresenceResponse{UserID: st.UserID, Online: st.Online}
+		pr := dto.PresenceResponse{UserID: st.UserID, Online: st.Online, Nickname: st.Nickname}
 		if st.LastSeen != nil {
 			v := st.LastSeen.Unix()
 			pr.LastSeen = &v
