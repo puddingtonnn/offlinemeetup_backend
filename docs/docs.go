@@ -58,6 +58,34 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/auth/logout": {
+            "post": {
+                "description": "Отзывает переданный refresh_token. Идемпотентно.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Выход",
+                "parameters": [
+                    {
+                        "description": "Refresh token",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.refreshRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
         "/v1/auth/me": {
             "get": {
                 "security": [
@@ -88,6 +116,46 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/refresh": {
+            "post": {
+                "description": "Принимает refresh_token, ротирует его и возвращает новую пару токенов.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Обновить токены",
+                "parameters": [
+                    {
+                        "description": "Refresh token",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.refreshRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AuthTokensResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }
@@ -502,11 +570,11 @@ const docTemplate = `{
                 "tags": [
                     "Files"
                 ],
-                "summary": "Загрузить файл",
+                "summary": "Загрузить медиафайл (фото/видео/аудио)",
                 "parameters": [
                     {
                         "type": "file",
-                        "description": "Файл",
+                        "description": "Медиафайл",
                         "name": "file",
                         "in": "formData",
                         "required": true
@@ -1311,6 +1379,23 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AuthTokensResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "refresh_token": {
+                    "type": "string"
+                },
+                "token_type": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ChatResponse": {
             "type": "object",
             "properties": {
@@ -1506,6 +1591,9 @@ const docTemplate = `{
                 "reply_to": {
                     "$ref": "#/definitions/dto.MessagePreview"
                 },
+                "request_id": {
+                    "type": "string"
+                },
                 "sender": {
                     "$ref": "#/definitions/dto.ProfileResponse"
                 },
@@ -1519,6 +1607,9 @@ const docTemplate = `{
             "properties": {
                 "last_seen": {
                     "type": "integer"
+                },
+                "nickname": {
+                    "type": "string"
                 },
                 "online": {
                     "type": "boolean"
@@ -1646,6 +1737,11 @@ const docTemplate = `{
                 "reply_to_message_id": {
                     "type": "integer",
                     "example": 42
+                },
+                "request_id": {
+                    "description": "RequestID — клиентский idempotency key (UUID). Повторный POST с тем же\nrequest_id не создаёт дубль, а возвращает уже созданное сообщение (200).",
+                    "type": "string",
+                    "example": "a1b2c3d4-..."
                 }
             }
         },
@@ -1653,6 +1749,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.refreshRequest": {
+            "type": "object",
+            "properties": {
+                "refresh_token": {
                     "type": "string"
                 }
             }
