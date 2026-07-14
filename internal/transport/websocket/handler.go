@@ -132,7 +132,7 @@ func (h *WSHandler) announcePresence(userID int64, client *Client) {
 	if err != nil {
 		h.log.Error("presence: on connect", slog.Any("err", err))
 	} else if online && len(recipients) > 0 {
-		h.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOnline, userID, true, nil))
+		h.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOnline, userID, true, client.nickname, nil))
 	}
 
 	statuses, err := h.presenceService.SnapshotFor(ctx, userID)

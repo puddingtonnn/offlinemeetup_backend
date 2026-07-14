@@ -46,11 +46,13 @@ type WSMessagesReadPayload struct {
 	LastReadMessageID int64 `json:"last_read_message_id"`
 }
 
-// WSPresencePayload carries one user's online state. LastSeen is a unix
+// WSPresencePayload carries one user's online state. Nickname is the display
+// name so clients render presence without a second lookup. LastSeen is a unix
 // timestamp, set only for offline transitions/snapshots.
 type WSPresencePayload struct {
 	UserID   int64  `json:"user_id"`
 	Online   bool   `json:"online"`
+	Nickname string `json:"nickname,omitempty"`
 	LastSeen *int64 `json:"last_seen,omitempty"`
 }
 

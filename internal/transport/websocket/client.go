@@ -305,7 +305,7 @@ func (c *Client) markOffline() {
 	}
 	if offline && len(recipients) > 0 {
 		ls := lastSeen.Unix()
-		c.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOffline, c.userID, false, &ls))
+		c.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOffline, c.userID, false, c.nickname, &ls))
 	}
 }
 

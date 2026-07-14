@@ -45,10 +45,12 @@ type MessagePreview struct {
 	IsDeleted      bool   `json:"is_deleted"`
 }
 
-// PresenceResponse is one chat member's online state. LastSeen is a unix
+// PresenceResponse is one chat member's online state. Nickname is the display
+// name so clients render presence without a second lookup. LastSeen is a unix
 // timestamp (seconds), present only for offline members with a known last visit.
 type PresenceResponse struct {
 	UserID   int64  `json:"user_id"`
 	Online   bool   `json:"online"`
+	Nickname string `json:"nickname,omitempty"`
 	LastSeen *int64 `json:"last_seen,omitempty"`
 }
