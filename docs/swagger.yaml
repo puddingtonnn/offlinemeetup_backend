@@ -11,14 +11,20 @@ definitions:
     type: object
   dto.AttachmentResponse:
     properties:
+      duration_ms:
+        type: integer
       file_name:
         type: string
+      height:
+        type: integer
       mime_type:
         type: string
       size:
         type: integer
       url:
         type: string
+      width:
+        type: integer
     type: object
   dto.AuthTokensResponse:
     properties:

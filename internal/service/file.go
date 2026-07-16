@@ -60,15 +60,23 @@ func (s *FileService) Upload(ctx context.Context, userID int64, fileName string,
 		return nil, fmt.Errorf("rewinding upload stream: %w", err)
 	}
 
+	// Best-effort metadata pass over the seekable stream: extracts duration +
+	// dimensions and corrects an audio-only mp4 that sniffed as video. A parse
+	// failure degrades to the Detect result, so it never blocks the upload.
+	meta := media.ExtractMeta(mimeType, ext, reader)
+	if _, err := reader.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("rewinding upload stream: %w", err)
+	}
+
 	fileID := uuid.New()
-	key := fmt.Sprintf("uploads/%s%s", fileID.String(), ext)
+	key := fmt.Sprintf("uploads/%s%s", fileID.String(), meta.Ext)
 
 	_, err = s.s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(s.cfg.S3Bucket),
 		Key:           aws.String(key),
 		Body:          reader,
 		ContentLength: aws.Int64(size),
-		ContentType:   aws.String(mimeType),
+		ContentType:   aws.String(meta.Mime),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload to s3: %w", err)
@@ -80,8 +88,11 @@ func (s *FileService) Upload(ctx context.Context, userID int64, fileName string,
 		Key:        key,
 		Bucket:     s.cfg.S3Bucket,
 		Size:       size,
-		MimeType:   mimeType,
+		MimeType:   meta.Mime,
 		UploadedBy: &userID,
+		DurationMS: meta.DurationMS,
+		Width:      meta.Width,
+		Height:     meta.Height,
 	}
 
 	if err := s.repo.Create(ctx, file); err != nil {

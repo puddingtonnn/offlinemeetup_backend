@@ -1365,8 +1365,14 @@ const docTemplate = `{
         "dto.AttachmentResponse": {
             "type": "object",
             "properties": {
+                "duration_ms": {
+                    "type": "integer"
+                },
                 "file_name": {
                     "type": "string"
+                },
+                "height": {
+                    "type": "integer"
                 },
                 "mime_type": {
                     "type": "string"
@@ -1376,6 +1382,9 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                },
+                "width": {
+                    "type": "integer"
                 }
             }
         },
