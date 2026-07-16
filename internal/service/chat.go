@@ -200,10 +200,13 @@ func (s *ChatService) mapMessageToResponse(m *domain.Message) *dto.MessageRespon
 	var attachment *dto.AttachmentResponse
 	if !isDeleted && m.File != nil {
 		attachment = &dto.AttachmentResponse{
-			URL:      publicURL(s.s3PublicURL, m.File),
-			FileName: m.File.FileName,
-			MimeType: m.File.MimeType,
-			Size:     m.File.Size,
+			URL:        publicURL(s.s3PublicURL, m.File),
+			FileName:   m.File.FileName,
+			MimeType:   m.File.MimeType,
+			Size:       m.File.Size,
+			DurationMS: m.File.DurationMS,
+			Width:      m.File.Width,
+			Height:     m.File.Height,
 		}
 	}
 

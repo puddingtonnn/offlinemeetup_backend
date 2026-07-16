@@ -29,11 +29,16 @@ type MessageResponse struct {
 }
 
 // AttachmentResponse is a file attached to a message, with a ready public URL.
+// DurationMS (audio/video), Width and Height (images/video) are present only when
+// the metadata was extractable, so clients can size a placeholder before download.
 type AttachmentResponse struct {
-	URL      string `json:"url"`
-	FileName string `json:"file_name"`
-	MimeType string `json:"mime_type"`
-	Size     int64  `json:"size"`
+	URL        string `json:"url"`
+	FileName   string `json:"file_name"`
+	MimeType   string `json:"mime_type"`
+	Size       int64  `json:"size"`
+	DurationMS *int64 `json:"duration_ms,omitempty"`
+	Width      *int   `json:"width,omitempty"`
+	Height     *int   `json:"height,omitempty"`
 }
 
 // MessagePreview is a compact quoted message shown above a reply.
