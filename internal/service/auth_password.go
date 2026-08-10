@@ -250,6 +250,15 @@ func (s *AuthService) commitRegistration(ctx context.Context, email, username, p
 			}
 			return 0, err
 		}
+		// AttachPassword is an upsert: if the account already had a password,
+		// this just replaced it. Any password-hash mutation must kill every
+		// existing session, otherwise a stolen refresh token outlives the
+		// password it was obtained under (same rule reset/change-password
+		// follow). Revoke BEFORE issueTokenPair so the caller's own fresh pair
+		// — minted after this returns — survives.
+		if err := s.refreshRepo.RevokeAllForUser(ctx, existingID); err != nil {
+			return 0, fmt.Errorf("revoking sessions after password attach: %w", err)
+		}
 		return existingID, nil
 
 	case errors.Is(err, repo.ErrNotFound):

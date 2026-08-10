@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"regexp"
 	"sync"
@@ -248,6 +249,36 @@ func TestAuthService_Register_RepeatOverwritesPending(t *testing.T) {
 	f.mailer.wait(t)
 }
 
+// exhaustMailQuota burns the whole hourly send allowance for an email.
+func exhaustMailQuota(t *testing.T, f *authPwdFixture, email string) {
+	t.Helper()
+	for i := 0; i < f.cfg.EmailSendQuotaPerHour; i++ {
+		_, err := f.store.IncrementMailQuota(context.Background(), email, time.Hour)
+		require.NoError(t, err)
+	}
+}
+
+func TestAuthService_Register_OverQuotaSucceedsWithoutSending(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	exhaustMailQuota(t, f, testNormEmail)
+
+	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(0), repo.ErrNotFound)
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
+
+	// Over the hourly quota the send is suppressed, but the response shape must
+	// not change (the API table has no 429 on register, and a different answer
+	// here would be an inbox-occupancy oracle). Still a plain success → 202.
+	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
+	f.mailer.assertNoMail(t)
+
+	// The pending object is still written — a resend (once the hour rolls over)
+	// can revive the registration without starting from scratch.
+	_, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	require.NoError(t, err)
+	assert.True(t, found)
+}
+
 // --- VerifyEmail -----------------------------------------------------------
 
 // seedPending puts a pending registration in Redis and returns the plaintext
@@ -298,6 +329,7 @@ func TestAuthService_VerifyEmail_ExistingAccountGetsCredentials(t *testing.T) {
 	// and the existing profile's username is left alone.
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(42), nil)
 	f.repo.EXPECT().AttachPassword(ctx, int64(42), gomock.Any()).Return(nil)
+	f.refresh.EXPECT().RevokeAllForUser(ctx, int64(42)).Return(nil)
 	f.refresh.EXPECT().Create(ctx, gomock.Any()).DoAndReturn(func(_ context.Context, rt any) error {
 		return nil
 	})
@@ -305,6 +337,55 @@ func TestAuthService_VerifyEmail_ExistingAccountGetsCredentials(t *testing.T) {
 	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
 	require.NoError(t, err)
 	require.NotNil(t, tokens)
+}
+
+// The attach branch is an upsert, so it also covers "this email already had an
+// email/password account and the password is being REPLACED". Overwriting a
+// password hash must kill every existing session — otherwise a refresh token
+// stolen under the old password keeps working.
+func TestAuthService_VerifyEmail_PasswordOverwriteRevokesAllSessions(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	code := seedPending(t, f, testUsername)
+
+	const existingID = int64(42)
+
+	// gomock.InOrder pins the ordering that makes this safe: the revoke happens
+	// BEFORE the new refresh token is minted, so the caller's own fresh session
+	// isn't swept away by its own revoke.
+	gomock.InOrder(
+		f.repo.EXPECT().AttachPassword(ctx, existingID, gomock.Any()).Return(nil),
+		f.refresh.EXPECT().RevokeAllForUser(ctx, existingID).Return(nil),
+		f.refresh.EXPECT().Create(ctx, gomock.Any()).Return(nil),
+	)
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(existingID, nil)
+
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	require.NoError(t, err)
+	require.NotNil(t, tokens)
+	assert.NotEmpty(t, tokens.RefreshToken, "the caller still gets a working session")
+}
+
+// If the sessions can't be revoked, the verify must fail rather than quietly
+// leave a stolen session alive under a password the attacker no longer knows.
+func TestAuthService_VerifyEmail_RevokeFailureFailsVerify(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	code := seedPending(t, f, testUsername)
+
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(42), nil)
+	f.repo.EXPECT().AttachPassword(ctx, int64(42), gomock.Any()).Return(nil)
+	f.refresh.EXPECT().RevokeAllForUser(ctx, int64(42)).Return(errors.New("db down"))
+	// No Create expectation: no token pair may be issued.
+
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	assert.Nil(t, tokens)
+	require.Error(t, err)
+
+	// The pending object survives so the user can simply retry once the DB is back.
+	_, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
+	require.NoError(t, storeErr)
+	assert.True(t, found)
 }
 
 func TestAuthService_VerifyEmail_NoPendingIs400(t *testing.T) {
@@ -451,4 +532,26 @@ func TestAuthService_ResendCode_CooldownIs429(t *testing.T) {
 	err := f.svc.ResendCode(ctx, testEmail)
 	assert.ErrorIs(t, err, ErrTooManyRequests)
 	f.mailer.assertNoMail(t)
+}
+
+func TestAuthService_ResendCode_QuotaExceededIs429(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	oldCode := seedPending(t, f, testUsername)
+
+	// The hourly allowance is already spent (e.g. by earlier resends). The
+	// cooldown is untouched, so this call gets past it and is rejected by the
+	// quota specifically.
+	exhaustMailQuota(t, f, testNormEmail)
+
+	err := f.svc.ResendCode(ctx, testEmail)
+	assert.ErrorIs(t, err, ErrTooManyRequests)
+	f.mailer.assertNoMail(t)
+
+	// Rejected before the pending object is touched: the code the user already
+	// has in their inbox must stay valid.
+	pending, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
+	require.NoError(t, storeErr)
+	require.True(t, found)
+	assert.Equal(t, hashCode(oldCode), pending.CodeHash)
 }
