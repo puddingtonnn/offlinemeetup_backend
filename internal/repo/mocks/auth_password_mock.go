@@ -154,6 +154,20 @@ func (mr *MockAuthStoreMockRecorder) DeletePendingReg(ctx, email any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePendingReg", reflect.TypeOf((*MockAuthStore)(nil).DeletePendingReg), ctx, email)
 }
 
+// DeletePendingReset mocks base method.
+func (m *MockAuthStore) DeletePendingReset(ctx context.Context, email string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeletePendingReset", ctx, email)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeletePendingReset indicates an expected call of DeletePendingReset.
+func (mr *MockAuthStoreMockRecorder) DeletePendingReset(ctx, email any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePendingReset", reflect.TypeOf((*MockAuthStore)(nil).DeletePendingReset), ctx, email)
+}
+
 // GetPendingReg mocks base method.
 func (m *MockAuthStore) GetPendingReg(ctx context.Context, email string) (cache.PendingReg, bool, error) {
 	m.ctrl.T.Helper()
@@ -168,6 +182,22 @@ func (m *MockAuthStore) GetPendingReg(ctx context.Context, email string) (cache.
 func (mr *MockAuthStoreMockRecorder) GetPendingReg(ctx, email any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPendingReg", reflect.TypeOf((*MockAuthStore)(nil).GetPendingReg), ctx, email)
+}
+
+// GetPendingReset mocks base method.
+func (m *MockAuthStore) GetPendingReset(ctx context.Context, email string) (cache.PendingReg, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPendingReset", ctx, email)
+	ret0, _ := ret[0].(cache.PendingReg)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetPendingReset indicates an expected call of GetPendingReset.
+func (mr *MockAuthStoreMockRecorder) GetPendingReset(ctx, email any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPendingReset", reflect.TypeOf((*MockAuthStore)(nil).GetPendingReset), ctx, email)
 }
 
 // IncrementLoginFail mocks base method.
@@ -215,6 +245,21 @@ func (mr *MockAuthStoreMockRecorder) IncrementPendingRegAttempts(ctx, email any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementPendingRegAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementPendingRegAttempts), ctx, email)
 }
 
+// IncrementPendingResetAttempts mocks base method.
+func (m *MockAuthStore) IncrementPendingResetAttempts(ctx context.Context, email string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementPendingResetAttempts", ctx, email)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementPendingResetAttempts indicates an expected call of IncrementPendingResetAttempts.
+func (mr *MockAuthStoreMockRecorder) IncrementPendingResetAttempts(ctx, email any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementPendingResetAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementPendingResetAttempts), ctx, email)
+}
+
 // ResetLoginFail mocks base method.
 func (m *MockAuthStore) ResetLoginFail(ctx context.Context, login string) error {
 	m.ctrl.T.Helper()
@@ -241,6 +286,20 @@ func (m *MockAuthStore) SavePendingReg(ctx context.Context, email string, data c
 func (mr *MockAuthStoreMockRecorder) SavePendingReg(ctx, email, data, ttl any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePendingReg", reflect.TypeOf((*MockAuthStore)(nil).SavePendingReg), ctx, email, data, ttl)
+}
+
+// SavePendingReset mocks base method.
+func (m *MockAuthStore) SavePendingReset(ctx context.Context, email string, data cache.PendingReg, ttl time.Duration) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SavePendingReset", ctx, email, data, ttl)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SavePendingReset indicates an expected call of SavePendingReset.
+func (mr *MockAuthStoreMockRecorder) SavePendingReset(ctx, email, data, ttl any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePendingReset", reflect.TypeOf((*MockAuthStore)(nil).SavePendingReset), ctx, email, data, ttl)
 }
 
 // MockMailer is a mock of Mailer interface.

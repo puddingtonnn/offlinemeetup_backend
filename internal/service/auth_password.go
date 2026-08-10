@@ -48,6 +48,12 @@ type AuthStore interface {
 	IncrementMailQuota(ctx context.Context, email string, window time.Duration) (int, error)
 	IncrementLoginFail(ctx context.Context, login string, window time.Duration) (int, error)
 	ResetLoginFail(ctx context.Context, login string) error
+	// Pending password reset (Task 6) — same shape/lifecycle as pending
+	// registration above, separate Redis key space (cache.PendingResetKey).
+	SavePendingReset(ctx context.Context, email string, data cache.PendingReg, ttl time.Duration) error
+	GetPendingReset(ctx context.Context, email string) (cache.PendingReg, bool, error)
+	DeletePendingReset(ctx context.Context, email string) error
+	IncrementPendingResetAttempts(ctx context.Context, email string) (int, error)
 }
 
 // Mailer sends a plain-text email. Consumer-side declaration of
@@ -378,6 +384,229 @@ func (s *AuthService) dropPending(ctx context.Context, email string) {
 	if err := s.authStore.DeletePendingReg(ctx, email); err != nil {
 		s.log.Error("invalidating pending registration", slog.String("err", err.Error()))
 	}
+}
+
+// ForgotPassword starts a password-reset flow (ADR-14). login is the same
+// email-or-username field as Login (ADR-2), resolved the same way
+// (isEmailLogin).
+//
+// This ALWAYS returns nil (→ 202), whether or not login resolves to a real
+// account — the plan's "rules easy to lose" bullet: a different response
+// (or a different set of side effects visible to a timing/enumeration
+// attacker) for "no such account" would turn this endpoint into exactly the
+// oracle ADR-7 spends the whole register flow avoiding.
+//
+// The mail cooldown/quota (Task 3, same controls ResendCode uses) is only
+// applied on the found-user path — there's no email to key it by for an
+// unknown login — and a cooldown/quota hit is a SILENT skip (still returns
+// nil): the external response never varies, so nothing is leaked through the
+// status code or body. This does leave a residual timing/round-trip-count
+// difference between "found, cooldown active" and "not found" (an extra
+// Redis round trip on the found path) — the same class of residual risk
+// already flagged in Task 5's Login (its concern #1: only the bcrypt cost is
+// pinned identical, not every round trip), not a new gap introduced here. See
+// the task-6 report for the full reasoning.
+func (s *AuthService) ForgotPassword(ctx context.Context, login string) error {
+	login = strings.TrimSpace(login)
+
+	var (
+		userID int64
+		err    error
+	)
+	if isEmailLogin(login) {
+		userID, err = s.passwordRepo.FindIDByEmail(ctx, normalizeEmail(login))
+	} else {
+		userID, err = s.passwordRepo.FindIDByUsername(ctx, login)
+	}
+	switch {
+	case err == nil:
+		// found, fall through below
+	case errors.Is(err, repo.ErrNotFound):
+		// Unknown login: identical nil return, no pending object, no email,
+		// no cooldown/quota touched.
+		return nil
+	default:
+		return err
+	}
+
+	// Resolve the account's email (need it whether login was already an email
+	// or a username) — the pending-reset object and the send are always keyed
+	// by email (ADR-3), same as registration.
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		// Resolved an ID that vanished between the two reads. Same
+		// anti-enumeration nil return as "not found" above.
+		return nil
+	}
+	email := normalizeEmail(user.Email)
+
+	allowed, err := s.authStore.CheckAndSetMailCooldown(ctx, email, s.cfg.EmailResendCooldown)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return nil
+	}
+	sent, err := s.authStore.IncrementMailQuota(ctx, email, time.Hour)
+	if err != nil {
+		return err
+	}
+	if sent > s.cfg.EmailSendQuotaPerHour {
+		return nil
+	}
+
+	code, err := generateCode()
+	if err != nil {
+		return err
+	}
+
+	pending := cache.PendingReg{CodeHash: hashCode(code)}
+	if err := s.authStore.SavePendingReset(ctx, email, pending, s.cfg.EmailCodeTTL); err != nil {
+		return err
+	}
+
+	// Personalization only ("Hi %s,") — not security-relevant, so a generic
+	// greeting is used rather than adding a Profile-lookup dependency this
+	// service doesn't otherwise need.
+	subject, body := mail.PasswordReset("there", code)
+	s.sendMailAsync(ctx, email, subject, body)
+
+	return nil
+}
+
+// dropPendingReset invalidates a pending password reset, logging (not
+// returning) a failure — every caller is already on an error/terminal path.
+func (s *AuthService) dropPendingReset(ctx context.Context, email string) {
+	if err := s.authStore.DeletePendingReset(ctx, email); err != nil {
+		s.log.Error("invalidating pending password reset", slog.String("err", err.Error()))
+	}
+}
+
+// ResetPassword completes a forgot-password flow: confirms the emailed code
+// and sets a new password. Same attempt-limiting shape as VerifyEmail (Task
+// 4), reusing IncrementPendingResetAttempts instead of reinventing it.
+//
+// This does NOT log the caller in — per the plan's API table, reset-password
+// returns 200 (no AuthTokensResponse), it's a password reset, not a login —
+// and it revokes every existing refresh token for the user ("rules easy to
+// lose": a stolen session must not survive a password reset).
+func (s *AuthService) ResetPassword(ctx context.Context, email, code, newPassword string) error {
+	email = normalizeEmail(email)
+
+	if !dto.ValidPassword(newPassword) {
+		return fmt.Errorf("%w: invalid password", ErrInvalidInput)
+	}
+
+	pending, found, err := s.authStore.GetPendingReset(ctx, email)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%w: no pending password reset", ErrInvalidInput)
+	}
+
+	if pending.Attempts >= s.cfg.EmailCodeMaxAttempts {
+		s.dropPendingReset(ctx, email)
+		return fmt.Errorf("%w: too many invalid codes", ErrTooManyRequests)
+	}
+
+	if !codeMatches(code, pending.CodeHash) {
+		attempts, err := s.authStore.IncrementPendingResetAttempts(ctx, email)
+		if err != nil {
+			if errors.Is(err, cache.ErrPendingNotFound) {
+				return fmt.Errorf("%w: no pending password reset", ErrInvalidInput)
+			}
+			return err
+		}
+		if attempts >= s.cfg.EmailCodeMaxAttempts {
+			s.dropPendingReset(ctx, email)
+			return fmt.Errorf("%w: too many invalid codes", ErrTooManyRequests)
+		}
+		return fmt.Errorf("%w: invalid code", ErrInvalidInput)
+	}
+
+	// Re-resolve the account fresh at confirm time (same reasoning as
+	// commitRegistration: the pending object can be up to 15 minutes stale;
+	// don't trust a userID carried in Redis for that long — there isn't one
+	// stored here anyway, exactly to avoid that trap).
+	userID, err := s.passwordRepo.FindIDByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			// The account vanished between forgot-password and reset. Spend
+			// the pending object and report not-found rather than silently
+			// no-op — this is an authenticated caller who already proved
+			// ownership of the code, not an anonymous prober.
+			s.dropPendingReset(ctx, email)
+			return ErrNotFound
+		}
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+	if err := s.credentialsRepo.Upsert(ctx, userID, string(hash)); err != nil {
+		return err
+	}
+
+	// "Rules easy to lose": revoke every refresh token, same as
+	// commitRegistration's password-overwrite path — a stolen session must
+	// not outlive the password it was obtained under.
+	if err := s.refreshRepo.RevokeAllForUser(ctx, userID); err != nil {
+		return fmt.Errorf("revoking sessions after password reset: %w", err)
+	}
+
+	if err := s.authStore.DeletePendingReset(ctx, email); err != nil {
+		s.log.Error("deleting spent pending password reset", slog.String("err", err.Error()))
+	}
+
+	return nil
+}
+
+// ChangePassword changes the password for an authenticated caller (route is
+// under AuthMiddleware, userID comes from the verified access token, not
+// request input).
+//
+// If the account has no user_credentials row yet — a Google/Telegram-only
+// account setting its FIRST password (ADR-14's second scenario) —
+// currentPassword is not checked at all. Otherwise it must match the stored
+// hash. Either way, a successful change revokes every refresh token for the
+// user (same rule as ResetPassword: a stolen session must not survive a
+// password change).
+func (s *AuthService) ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error {
+	if !dto.ValidPassword(newPassword) {
+		return fmt.Errorf("%w: invalid password", ErrInvalidInput)
+	}
+
+	creds, err := s.credentialsRepo.Get(ctx, userID)
+	switch {
+	case err == nil:
+		if bcrypt.CompareHashAndPassword([]byte(creds.PasswordHash), []byte(currentPassword)) != nil {
+			return ErrUnauthorized
+		}
+	case errors.Is(err, repo.ErrNotFound):
+		// No password ever set for this account — nothing to verify against.
+	default:
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+	if err := s.credentialsRepo.Upsert(ctx, userID, string(hash)); err != nil {
+		return err
+	}
+
+	if err := s.refreshRepo.RevokeAllForUser(ctx, userID); err != nil {
+		return fmt.Errorf("revoking sessions after password change: %w", err)
+	}
+
+	return nil
 }
 
 // sendMailAsync sends an email off the request goroutine (ADR-11): the handler

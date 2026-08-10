@@ -15,8 +15,14 @@ import (
 // flow needs (ADR-6: the password hash lives in its own table, never on
 // UserRepo.GetByID's path). Declared at the consumer; implemented by
 // *repo.CredentialsRepo.
+//
+// Upsert is used by ResetPassword/ChangePassword (auth_password.go, Task 6) —
+// widened here rather than declaring a second overlapping interface, same
+// precedent as AuthStore being widened in auth_password.go for Login's
+// counter methods (Task 5).
 type CredentialsRepository interface {
 	Get(ctx context.Context, userID int64) (*domain.UserCredentials, error)
+	Upsert(ctx context.Context, userID int64, hash string) error
 }
 
 // dummyPasswordHash is a fixed bcrypt hash (cost bcryptCost, matching

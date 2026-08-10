@@ -269,6 +269,100 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, tokenResponse(tokens))
 }
 
+// ForgotPassword
+// @Summary      Запросить сброс пароля
+// @Description  Принимает login (email или username) и всегда отвечает 202 — независимо от того, существует ли такой аккаунт, чтобы эндпоинт не подсказывал, какие аккаунты зарегистрированы. Код для сброса отправляется на email, только если аккаунт найден.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body dto.ForgotPasswordRequest true "Login"
+// @Success      202  "Accepted"
+// @Failure      400  {object}  response.ValidationErrorResponse
+// @Router       /v1/auth/forgot-password [post]
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req dto.ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
+	if err := h.service.ForgotPassword(r.Context(), req.Login); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// ResetPassword
+// @Summary      Завершить сброс пароля
+// @Description  Проверяет код из письма и устанавливает новый пароль. Не логинит — все refresh-токены пользователя отзываются.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body dto.ResetPasswordRequest true "Email, код, новый пароль"
+// @Success      200  "OK"
+// @Failure      400  {object}  response.ValidationErrorResponse
+// @Failure      429  {object}  response.ErrorResponse
+// @Router       /v1/auth/reset-password [post]
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req dto.ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
+	if err := h.service.ResetPassword(r.Context(), req.Email, req.Code, req.NewPassword); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// ChangePassword
+// @Summary      Сменить пароль
+// @Description  Меняет пароль текущего аккаунта. Если у аккаунта ещё нет пароля (вход был только через Google/Telegram), current_password не проверяется. Все refresh-токены пользователя отзываются.
+// @Tags         Auth
+// @Security     BearerAuth
+// @Accept       json
+// @Param        input body dto.ChangePasswordRequest true "Текущий и новый пароль"
+// @Success      204  "No Content"
+// @Failure      400  {object}  response.ValidationErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Router       /v1/auth/password [patch]
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r, h.log)
+	if !ok {
+		return
+	}
+
+	var req dto.ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
+	if err := h.service.ChangePassword(r.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Refresh
 // @Summary      Обновить токены
 // @Description  Принимает refresh_token, ротирует его и возвращает новую пару токенов.

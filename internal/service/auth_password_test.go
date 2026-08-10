@@ -18,6 +18,7 @@ import (
 
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/cache"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	repomocks "github.com/puddingtonnn/offlinemeetup_backend/internal/repo/mocks"
 	svcmocks "github.com/puddingtonnn/offlinemeetup_backend/internal/service/mocks"
@@ -91,13 +92,15 @@ func codeFrom(t *testing.T, msg sentMail) string {
 // --- fixture ---------------------------------------------------------------
 
 type authPwdFixture struct {
-	mr      *miniredis.Miniredis
-	svc     *AuthService
-	repo    *repomocks.MockPasswordUserRepository
-	refresh *svcmocks.MockRefreshTokenRepository
-	store   *cache.RedisAuthStore
-	mailer  *fakeMailer
-	cfg     *config.Config
+	mr       *miniredis.Miniredis
+	svc      *AuthService
+	authRepo *svcmocks.MockAuthRepository
+	repo     *repomocks.MockPasswordUserRepository
+	credRepo *repomocks.MockCredentialsRepository
+	refresh  *svcmocks.MockRefreshTokenRepository
+	store    *cache.RedisAuthStore
+	mailer   *fakeMailer
+	cfg      *config.Config
 }
 
 func setupAuthPasswordTest(t *testing.T) *authPwdFixture {
@@ -108,7 +111,9 @@ func setupAuthPasswordTest(t *testing.T) *authPwdFixture {
 	t.Cleanup(func() { _ = rdb.Close() })
 
 	ctrl := gomock.NewController(t)
+	authRepo := svcmocks.NewMockAuthRepository(ctrl)
 	pwdRepo := repomocks.NewMockPasswordUserRepository(ctrl)
+	credRepo := repomocks.NewMockCredentialsRepository(ctrl)
 	refreshRepo := svcmocks.NewMockRefreshTokenRepository(ctrl)
 
 	log := discardLog()
@@ -126,16 +131,18 @@ func setupAuthPasswordTest(t *testing.T) *authPwdFixture {
 		EmailSendQuotaPerHour: 5,
 	}
 
-	svc := NewAuthService(nil, pwdRepo, nil, refreshRepo, store, mailer, cfg, log)
+	svc := NewAuthService(authRepo, pwdRepo, credRepo, refreshRepo, store, mailer, cfg, log)
 
 	return &authPwdFixture{
-		mr:      mr,
-		svc:     svc,
-		repo:    pwdRepo,
-		refresh: refreshRepo,
-		store:   store,
-		mailer:  mailer,
-		cfg:     cfg,
+		mr:       mr,
+		svc:      svc,
+		authRepo: authRepo,
+		repo:     pwdRepo,
+		credRepo: credRepo,
+		refresh:  refreshRepo,
+		store:    store,
+		mailer:   mailer,
+		cfg:      cfg,
 	}
 }
 
@@ -554,4 +561,185 @@ func TestAuthService_ResendCode_QuotaExceededIs429(t *testing.T) {
 	require.NoError(t, storeErr)
 	require.True(t, found)
 	assert.Equal(t, hashCode(oldCode), pending.CodeHash)
+}
+
+// --- ForgotPassword ----------------------------------------------------------
+
+func TestAuthService_ForgotPassword_UnknownLogin_SucceedsWithoutMail(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	// Login typed as an email: only FindIDByEmail should be consulted, and no
+	// GetByID/cooldown/quota/pending-save work happens for an unknown login.
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
+
+	err := f.svc.ForgotPassword(ctx, testEmail)
+	assert.NoError(t, err, "unknown login must still report success (anti-enumeration)")
+	f.mailer.assertNoMail(t)
+
+	_, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)
+	require.NoError(t, storeErr)
+	assert.False(t, found)
+}
+
+func TestAuthService_ForgotPassword_KnownLogin_SendsMailAndSavesPendingReset(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	const userID = int64(42)
+	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(userID, nil)
+	f.authRepo.EXPECT().GetByID(ctx, userID).Return(&domain.User{ID: userID, Email: testNormEmail}, nil)
+
+	err := f.svc.ForgotPassword(ctx, testUsername)
+	require.NoError(t, err)
+
+	msg := f.mailer.wait(t)
+	assert.Equal(t, testNormEmail, msg.to)
+	assert.Contains(t, msg.subject, "Reset your Meetuper password")
+	code := codeFrom(t, msg)
+
+	pending, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)
+	require.NoError(t, storeErr)
+	require.True(t, found)
+	assert.Equal(t, hashCode(code), pending.CodeHash)
+}
+
+// Same external nil-ness/error-shape for the found and not-found cases — the
+// two must be indistinguishable to the caller (both return nil, i.e. 202).
+func TestAuthService_ForgotPassword_SameExternalOutcomeBothCases(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
+	errUnknown := f.svc.ForgotPassword(ctx, testEmail)
+
+	const userID = int64(7)
+	f.repo.EXPECT().FindIDByEmail(ctx, "known@example.com").Return(userID, nil)
+	f.authRepo.EXPECT().GetByID(ctx, userID).Return(&domain.User{ID: userID, Email: "known@example.com"}, nil)
+	errKnown := f.svc.ForgotPassword(ctx, "known@example.com")
+
+	assert.NoError(t, errUnknown)
+	assert.NoError(t, errKnown)
+	assert.Equal(t, errUnknown, errKnown, "both outcomes must be byte-identical (both nil)")
+	f.mailer.wait(t) // only the known-login path actually sent mail
+}
+
+func TestAuthService_ForgotPassword_CooldownActive_SilentlySkipsSend(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	const userID = int64(42)
+	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(userID, nil).Times(2)
+	f.authRepo.EXPECT().GetByID(ctx, userID).Return(&domain.User{ID: userID, Email: testNormEmail}, nil).Times(2)
+
+	require.NoError(t, f.svc.ForgotPassword(ctx, testUsername))
+	f.mailer.wait(t)
+
+	// Second call within the cooldown window: still nil (202), but no second
+	// email and the pending code from the first call survives untouched.
+	pendingBefore, _, err := f.store.GetPendingReset(ctx, testNormEmail)
+	require.NoError(t, err)
+
+	err = f.svc.ForgotPassword(ctx, testUsername)
+	assert.NoError(t, err, "a cooldown hit must not change the external always-202 contract")
+	f.mailer.assertNoMail(t)
+
+	pendingAfter, found, err := f.store.GetPendingReset(ctx, testNormEmail)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, pendingBefore.CodeHash, pendingAfter.CodeHash)
+}
+
+// --- ResetPassword -----------------------------------------------------------
+
+func seedPendingReset(t *testing.T, f *authPwdFixture) string {
+	t.Helper()
+	code, err := generateCode()
+	require.NoError(t, err)
+	require.NoError(t, f.store.SavePendingReset(context.Background(), testNormEmail, cache.PendingReg{
+		CodeHash: hashCode(code),
+	}, f.cfg.EmailCodeTTL))
+	return code
+}
+
+func TestAuthService_ResetPassword_Success_RevokesAllTokens(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	code := seedPendingReset(t, f)
+
+	const userID = int64(42)
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(userID, nil)
+	f.credRepo.EXPECT().Upsert(ctx, userID, gomock.Any()).Return(nil)
+	f.refresh.EXPECT().RevokeAllForUser(ctx, userID).Return(nil)
+
+	err := f.svc.ResetPassword(ctx, testEmail, code, "a brand new password")
+	require.NoError(t, err)
+
+	_, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)
+	require.NoError(t, storeErr)
+	assert.False(t, found, "a spent pending reset is deleted")
+}
+
+func TestAuthService_ResetPassword_WrongCode_400(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	seedPendingReset(t, f)
+
+	// No repo/credRepo/refresh expectations: a wrong code must not touch any
+	// of them.
+	err := f.svc.ResetPassword(ctx, testEmail, "000000", "a brand new password")
+	assert.ErrorIs(t, err, ErrInvalidInput)
+}
+
+func TestAuthService_ResetPassword_NoPendingIs400(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	err := f.svc.ResetPassword(context.Background(), testEmail, "123456", "a brand new password")
+	assert.ErrorIs(t, err, ErrInvalidInput)
+}
+
+// --- ChangePassword ------------------------------------------------------
+
+func TestAuthService_ChangePassword_Success_RevokesAllTokens(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	const userID = int64(42)
+
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("old password"), bcrypt.MinCost)
+	require.NoError(t, err)
+	f.credRepo.EXPECT().Get(ctx, userID).Return(&domain.UserCredentials{UserID: userID, PasswordHash: string(oldHash)}, nil)
+	f.credRepo.EXPECT().Upsert(ctx, userID, gomock.Any()).Return(nil)
+	f.refresh.EXPECT().RevokeAllForUser(ctx, userID).Return(nil)
+
+	err = f.svc.ChangePassword(ctx, userID, "old password", "a brand new password")
+	assert.NoError(t, err)
+}
+
+func TestAuthService_ChangePassword_WrongCurrentPassword_FailsWithoutRevoking(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	const userID = int64(42)
+
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("old password"), bcrypt.MinCost)
+	require.NoError(t, err)
+	f.credRepo.EXPECT().Get(ctx, userID).Return(&domain.UserCredentials{UserID: userID, PasswordHash: string(oldHash)}, nil)
+	// No Upsert/RevokeAllForUser expectations: a wrong current password must
+	// not touch either.
+
+	err = f.svc.ChangePassword(ctx, userID, "totally wrong", "a brand new password")
+	assert.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func TestAuthService_ChangePassword_SocialOnlyUser_SkipsCurrentPasswordCheck(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	const userID = int64(42)
+
+	f.credRepo.EXPECT().Get(ctx, userID).Return(nil, repo.ErrNotFound)
+	f.credRepo.EXPECT().Upsert(ctx, userID, gomock.Any()).Return(nil)
+	f.refresh.EXPECT().RevokeAllForUser(ctx, userID).Return(nil)
+
+	// currentPassword is empty (the client never had one to send) and must not
+	// block the first-time password set.
+	err := f.svc.ChangePassword(ctx, userID, "", "a brand new password")
+	assert.NoError(t, err)
 }

@@ -55,3 +55,17 @@ func (mr *MockCredentialsRepositoryMockRecorder) Get(ctx, userID any) *gomock.Ca
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCredentialsRepository)(nil).Get), ctx, userID)
 }
+
+// Upsert mocks base method.
+func (m *MockCredentialsRepository) Upsert(ctx context.Context, userID int64, hash string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Upsert", ctx, userID, hash)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Upsert indicates an expected call of Upsert.
+func (mr *MockCredentialsRepositoryMockRecorder) Upsert(ctx, userID, hash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Upsert", reflect.TypeOf((*MockCredentialsRepository)(nil).Upsert), ctx, userID, hash)
+}

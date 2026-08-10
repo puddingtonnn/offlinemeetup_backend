@@ -117,3 +117,60 @@ func (r *LoginRequest) Validate() map[string]string {
 	}
 	return errs
 }
+
+// ForgotPasswordRequest starts a password-reset flow (ADR-14). Login is the
+// same email-or-username field as LoginRequest (ADR-2), resolved the same
+// way. The response is always 202 regardless of whether login resolves to a
+// real account (see AuthService.ForgotPassword) — Validate only rejects an
+// empty field, which is a plain client bug, not an account-existence signal.
+type ForgotPasswordRequest struct {
+	Login string `json:"login"`
+}
+
+func (r *ForgotPasswordRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	if strings.TrimSpace(r.Login) == "" {
+		errs["login"] = "must not be empty"
+	}
+	return errs
+}
+
+// ResetPasswordRequest completes a forgot-password flow: the emailed code
+// plus a new password.
+type ResetPasswordRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
+}
+
+func (r *ResetPasswordRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	if !ValidEmail(strings.TrimSpace(strings.ToLower(r.Email))) {
+		errs["email"] = "must be a valid email address"
+	}
+	if !codeRegexp.MatchString(r.Code) {
+		errs["code"] = "must be a 6-digit code"
+	}
+	if !ValidPassword(r.NewPassword) {
+		errs["new_password"] = "must be between 8 and 72 bytes"
+	}
+	return errs
+}
+
+// ChangePasswordRequest changes the password of an authenticated caller.
+// CurrentPassword is only required by the SERVICE when the account already
+// has a password set — a Google/Telegram-only account setting its first
+// password legitimately sends it empty, so it is intentionally not checked
+// for non-emptiness here.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+func (r *ChangePasswordRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	if !ValidPassword(r.NewPassword) {
+		errs["new_password"] = "must be between 8 and 72 bytes"
+	}
+	return errs
+}
