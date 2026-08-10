@@ -19,6 +19,7 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/service/mail"
 	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
@@ -33,6 +34,12 @@ type App struct {
 	DB     *bun.DB
 	hub    *websocket.Hub
 	rdb    *redis.Client
+
+	// mailer/authStore/credentialsRepo are wired here but not yet consumed —
+	// AuthService's register/verify/login/forgot-reset methods land in Tasks 4-6.
+	mailer          mail.Mailer
+	authStore       *cache.RedisAuthStore
+	credentialsRepo *repo.CredentialsRepo
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
@@ -82,6 +89,12 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	meetupRepo := repo.NewMeetupRepo(db, chatRepo)
 	fileRepo := repo.NewFileRepo(db)
 	refreshRepo := repo.NewRefreshTokenRepo(db)
+	credentialsRepo := repo.NewCredentialsRepo(db)
+
+	// logMailer unconditionally for now — Task 7 branches local/dev (logMailer)
+	// vs prod (smtpMailer, github.com/wneessen/go-mail) once smtpMailer exists.
+	mailer := mail.NewLogMailer(log)
+	authStore := cache.NewRedisAuthStore(rdb, log)
 
 	authService := service.NewAuthService(userRepo, refreshRepo, cfg)
 	profileCache := cache.NewProfileCache(cached, cacheMetrics, cfg.CacheTTLProfile)
@@ -114,6 +127,10 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 		DB:     db,
 		hub:    hub,
 		rdb:    rdb,
+
+		mailer:          mailer,
+		authStore:       authStore,
+		credentialsRepo: credentialsRepo,
 	}
 }
 
