@@ -10,11 +10,12 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// ErrNotFound means the requested user_credentials row does not exist (a
-// user who only ever logged in via a social provider has none). The service
-// layer translates this into service.ErrNotFound at the boundary, same
-// pattern as ErrChatReadOnly/ErrNotChatMember in chat.go.
-var ErrNotFound = errors.New("user credentials not found")
+// ErrNotFound means a row the caller asked for by key does not exist — a
+// user_credentials row (a user who only ever logged in via a social provider
+// has none), or a user/profile looked up by email/username. The service layer
+// translates this into service.ErrNotFound at the boundary, same pattern as
+// ErrChatReadOnly/ErrNotChatMember in chat.go.
+var ErrNotFound = errors.New("row not found")
 
 // CredentialsRepo owns the password hash for a user (ADR-6). Kept in its own
 // table/file, separate from UserRepo, so a plain GetByID of a user never
@@ -46,8 +47,16 @@ func (r *CredentialsRepo) Get(ctx context.Context, userID int64) (*domain.UserCr
 // verify and by change/reset password, all of which want a single atomic
 // write regardless of whether a row already exists).
 func (r *CredentialsRepo) Upsert(ctx context.Context, userID int64, hash string) error {
+	return upsertCredentials(ctx, r.db, userID, hash)
+}
+
+// upsertCredentials is the single INSERT ... ON CONFLICT that writes a
+// password hash. It takes a bun.IDB so it works both standalone (CredentialsRepo)
+// and inside another repo's transaction (UserRepo's registration/attach paths,
+// which must write credentials in the SAME tx as the user/profile rows).
+func upsertCredentials(ctx context.Context, idb bun.IDB, userID int64, hash string) error {
 	creds := &domain.UserCredentials{UserID: userID, PasswordHash: hash}
-	_, err := r.db.NewInsert().
+	_, err := idb.NewInsert().
 		Model(creds).
 		On("CONFLICT (user_id) DO UPDATE").
 		Set("password_hash = EXCLUDED.password_hash").

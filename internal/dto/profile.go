@@ -5,7 +5,17 @@ import (
 	"unicode/utf8"
 )
 
+// usernameRegexp is the single definition of the username format (ADR-4).
+// Note the character class excludes `@`, which is what lets the login endpoint
+// tell an email from a username by the presence of `@` (ADR-2).
 var usernameRegexp = regexp.MustCompile(`^[a-zA-Z0-9_.]{2,32}$`)
+
+// ValidUsername reports whether s is a syntactically valid username. Shared by
+// every request DTO that carries one (profile update, register, verify) so the
+// rule lives in exactly one place.
+func ValidUsername(s string) bool {
+	return usernameRegexp.MatchString(s)
+}
 
 type ProfileResponse struct {
 	ID          int64         `json:"id"`
@@ -28,7 +38,7 @@ type UpdateProfileRequest struct {
 
 func (r *UpdateProfileRequest) Validate() map[string]string {
 	errs := make(map[string]string)
-	if r.Username != nil && !usernameRegexp.MatchString(*r.Username) {
+	if r.Username != nil && !ValidUsername(*r.Username) {
 		errs["username"] = "must be 2-32 chars, letters/digits/underscore/dot only"
 	}
 	if r.DisplayName != nil {
