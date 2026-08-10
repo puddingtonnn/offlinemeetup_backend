@@ -146,6 +146,97 @@ func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, tokenResponse(tokens))
 }
 
+// Register
+// @Summary      Регистрация по email и паролю
+// @Description  Создаёт «ожидающую» регистрацию и отправляет код подтверждения на email. Пользователь в БД не создаётся до подтверждения. Ответ одинаков независимо от того, существует ли уже аккаунт с таким email.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body dto.RegisterRequest true "Email, username, пароль"
+// @Success      202  "Accepted"
+// @Failure      400  {object}  response.ValidationErrorResponse
+// @Router       /v1/auth/register [post]
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var req dto.RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
+	if err := h.service.Register(r.Context(), req.Email, req.Username, req.Password); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// VerifyEmail
+// @Summary      Подтвердить email и завершить регистрацию
+// @Description  Проверяет код из письма, создаёт аккаунт (или добавляет пароль к существующему) и возвращает пару токенов. Если username заняли, пока код был в пути, вернётся 409 — повторите запрос с другим username.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body dto.VerifyEmailRequest true "Email, код, опционально другой username"
+// @Success      200  {object}  dto.AuthTokensResponse
+// @Failure      400  {object}  response.ValidationErrorResponse
+// @Failure      409  {object}  response.ErrorResponse
+// @Failure      429  {object}  response.ErrorResponse
+// @Router       /v1/auth/verify-email [post]
+func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req dto.VerifyEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
+	tokens, err := h.service.VerifyEmail(r.Context(), req.Email, req.Code, req.Username)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, tokenResponse(tokens))
+}
+
+// ResendCode
+// @Summary      Отправить код подтверждения повторно
+// @Description  Генерирует новый код для незавершённой регистрации. Отвечает 202 и в том случае, когда незавершённой регистрации нет — чтобы эндпоинт не подсказывал, какие email заняты.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body dto.ResendCodeRequest true "Email"
+// @Success      202  "Accepted"
+// @Failure      400  {object}  response.ValidationErrorResponse
+// @Failure      429  {object}  response.ErrorResponse
+// @Router       /v1/auth/resend-code [post]
+func (h *AuthHandler) ResendCode(w http.ResponseWriter, r *http.Request) {
+	var req dto.ResendCodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
+	if err := h.service.ResendCode(r.Context(), req.Email); err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
 // Refresh
 // @Summary      Обновить токены
 // @Description  Принимает refresh_token, ротирует его и возвращает новую пару токенов.

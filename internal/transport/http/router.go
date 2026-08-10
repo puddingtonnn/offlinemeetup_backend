@@ -54,6 +54,9 @@ func NewRouter(authHandler *handler.AuthHandler,
 			r.Use(authMiddleware.RateLimiter(rdb, log, "auth", 20, time.Minute, cfg.TrustProxyHeaders))
 
 			r.Post("/auth/google", authHandler.GoogleLogin)
+			r.Post("/auth/register", authHandler.Register)
+			r.Post("/auth/verify-email", authHandler.VerifyEmail)
+			r.Post("/auth/resend-code", authHandler.ResendCode)
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Route("/auth/telegram", func(r chi.Router) {
