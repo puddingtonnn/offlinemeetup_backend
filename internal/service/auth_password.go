@@ -36,8 +36,9 @@ type PasswordUserRepository interface {
 }
 
 // AuthStore is the Redis-backed auth state this flow needs: the pending
-// registration object (ADR-8) plus the mail cooldown/quota throttles.
-// Implemented by *cache.RedisAuthStore.
+// registration object (ADR-8), the mail cooldown/quota throttles, and (used
+// by Login in auth_login.go) the failed-login counter (ADR-13). Implemented
+// by *cache.RedisAuthStore.
 type AuthStore interface {
 	SavePendingReg(ctx context.Context, email string, data cache.PendingReg, ttl time.Duration) error
 	GetPendingReg(ctx context.Context, email string) (cache.PendingReg, bool, error)
@@ -45,6 +46,8 @@ type AuthStore interface {
 	IncrementPendingRegAttempts(ctx context.Context, email string) (int, error)
 	CheckAndSetMailCooldown(ctx context.Context, email string, cooldown time.Duration) (bool, error)
 	IncrementMailQuota(ctx context.Context, email string, window time.Duration) (int, error)
+	IncrementLoginFail(ctx context.Context, login string, window time.Duration) (int, error)
+	ResetLoginFail(ctx context.Context, login string) error
 }
 
 // Mailer sends a plain-text email. Consumer-side declaration of

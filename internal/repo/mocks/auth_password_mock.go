@@ -170,6 +170,21 @@ func (mr *MockAuthStoreMockRecorder) GetPendingReg(ctx, email any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPendingReg", reflect.TypeOf((*MockAuthStore)(nil).GetPendingReg), ctx, email)
 }
 
+// IncrementLoginFail mocks base method.
+func (m *MockAuthStore) IncrementLoginFail(ctx context.Context, login string, window time.Duration) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementLoginFail", ctx, login, window)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementLoginFail indicates an expected call of IncrementLoginFail.
+func (mr *MockAuthStoreMockRecorder) IncrementLoginFail(ctx, login, window any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementLoginFail", reflect.TypeOf((*MockAuthStore)(nil).IncrementLoginFail), ctx, login, window)
+}
+
 // IncrementMailQuota mocks base method.
 func (m *MockAuthStore) IncrementMailQuota(ctx context.Context, email string, window time.Duration) (int, error) {
 	m.ctrl.T.Helper()
@@ -198,6 +213,20 @@ func (m *MockAuthStore) IncrementPendingRegAttempts(ctx context.Context, email s
 func (mr *MockAuthStoreMockRecorder) IncrementPendingRegAttempts(ctx, email any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementPendingRegAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementPendingRegAttempts), ctx, email)
+}
+
+// ResetLoginFail mocks base method.
+func (m *MockAuthStore) ResetLoginFail(ctx context.Context, login string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetLoginFail", ctx, login)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetLoginFail indicates an expected call of ResetLoginFail.
+func (mr *MockAuthStoreMockRecorder) ResetLoginFail(ctx, login any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetLoginFail", reflect.TypeOf((*MockAuthStore)(nil).ResetLoginFail), ctx, login)
 }
 
 // SavePendingReg mocks base method.

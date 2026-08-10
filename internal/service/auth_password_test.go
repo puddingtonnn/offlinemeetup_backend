@@ -126,7 +126,7 @@ func setupAuthPasswordTest(t *testing.T) *authPwdFixture {
 		EmailSendQuotaPerHour: 5,
 	}
 
-	svc := NewAuthService(nil, pwdRepo, refreshRepo, store, mailer, cfg, log)
+	svc := NewAuthService(nil, pwdRepo, nil, refreshRepo, store, mailer, cfg, log)
 
 	return &authPwdFixture{
 		mr:      mr,

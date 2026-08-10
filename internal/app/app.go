@@ -35,9 +35,9 @@ type App struct {
 	hub    *websocket.Hub
 	rdb    *redis.Client
 
-	// credentialsRepo is wired here but not yet consumed — AuthService's
-	// login/forgot-reset methods (which read the stored hash) land in Tasks 5-6.
-	// mailer/authStore are consumed by AuthService's register/verify/resend.
+	// credentialsRepo is also handed to AuthService (its Login reads the
+	// stored hash) and kept here too — Task 6's forgot/reset-password flow
+	// is expected to need it directly.
 	credentialsRepo *repo.CredentialsRepo
 }
 
@@ -95,7 +95,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	mailer := mail.NewLogMailer(log)
 	authStore := cache.NewRedisAuthStore(rdb, log)
 
-	authService := service.NewAuthService(userRepo, userRepo, refreshRepo, authStore, mailer, cfg, log)
+	authService := service.NewAuthService(userRepo, userRepo, credentialsRepo, refreshRepo, authStore, mailer, cfg, log)
 	profileCache := cache.NewProfileCache(cached, cacheMetrics, cfg.CacheTTLProfile)
 	profileService := service.NewProfileService(profileRepo, userRepo, profileCache, cfg.S3PublicURL)
 	meetupCache := cache.NewMeetupCache(cached, cacheMetrics, cfg.CacheTTLMeetup)

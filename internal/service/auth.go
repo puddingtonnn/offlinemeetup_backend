@@ -51,17 +51,20 @@ type AuthService struct {
 	refreshRepo RefreshTokenRepository
 	cfg         *config.Config
 
-	// Email/password flow dependencies (auth_password.go). Their interfaces are
-	// declared in that file, at the consumer, per CLAUDE.md.
-	passwordRepo PasswordUserRepository
-	authStore    AuthStore
-	mailer       Mailer
-	log          *slog.Logger
+	// Email/password flow dependencies (auth_password.go, auth_login.go).
+	// Their interfaces are declared in those files, at the consumer, per
+	// CLAUDE.md.
+	passwordRepo    PasswordUserRepository
+	credentialsRepo CredentialsRepository
+	authStore       AuthStore
+	mailer          Mailer
+	log             *slog.Logger
 }
 
 func NewAuthService(
 	repo AuthRepository,
 	passwordRepo PasswordUserRepository,
+	credentialsRepo CredentialsRepository,
 	refreshRepo RefreshTokenRepository,
 	authStore AuthStore,
 	mailer Mailer,
@@ -69,13 +72,14 @@ func NewAuthService(
 	log *slog.Logger,
 ) *AuthService {
 	return &AuthService{
-		repo:         repo,
-		refreshRepo:  refreshRepo,
-		cfg:          cfg,
-		passwordRepo: passwordRepo,
-		authStore:    authStore,
-		mailer:       mailer,
-		log:          log,
+		repo:            repo,
+		refreshRepo:     refreshRepo,
+		cfg:             cfg,
+		passwordRepo:    passwordRepo,
+		credentialsRepo: credentialsRepo,
+		authStore:       authStore,
+		mailer:          mailer,
+		log:             log,
 	}
 }
 

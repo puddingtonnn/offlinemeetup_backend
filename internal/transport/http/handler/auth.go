@@ -237,6 +237,38 @@ func (h *AuthHandler) ResendCode(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// Login
+// @Summary      Вход по email/username и паролю
+// @Description  Принимает login (email или username — определяется по наличию '@') и пароль, возвращает пару токенов. Неизвестный login и неверный пароль дают одинаковую ошибку.
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        input body dto.LoginRequest true "Login, пароль"
+// @Success      200  {object}  dto.AuthTokensResponse
+// @Failure      400  {object}  response.ValidationErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      429  {object}  response.ErrorResponse
+// @Router       /v1/auth/login [post]
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var req dto.LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.RespondError(w, service.ErrInvalidInput, h.log)
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		response.RespondValidation(w, errs)
+		return
+	}
+
+	tokens, err := h.service.Login(r.Context(), req.Login, req.Password)
+	if err != nil {
+		response.RespondError(w, err, h.log)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, tokenResponse(tokens))
+}
+
 // Refresh
 // @Summary      Обновить токены
 // @Description  Принимает refresh_token, ротирует его и возвращает новую пару токенов.

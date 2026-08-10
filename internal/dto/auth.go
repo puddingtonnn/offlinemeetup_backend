@@ -97,3 +97,23 @@ func (r *ResendCodeRequest) Validate() map[string]string {
 	}
 	return errs
 }
+
+// LoginRequest authenticates by email OR username + password (ADR-2). Login
+// is not format-checked here beyond non-empty — the server decides email vs
+// username by the presence of '@' (usernames are validated elsewhere to
+// forbid '@', so the two spaces never overlap).
+type LoginRequest struct {
+	Login    string `json:"login"`
+	Password string `json:"password"`
+}
+
+func (r *LoginRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	if strings.TrimSpace(r.Login) == "" {
+		errs["login"] = "must not be empty"
+	}
+	if r.Password == "" {
+		errs["password"] = "must not be empty"
+	}
+	return errs
+}

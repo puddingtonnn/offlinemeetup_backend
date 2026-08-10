@@ -57,6 +57,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 			r.Post("/auth/register", authHandler.Register)
 			r.Post("/auth/verify-email", authHandler.VerifyEmail)
 			r.Post("/auth/resend-code", authHandler.ResendCode)
+			r.Post("/auth/login", authHandler.Login)
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Route("/auth/telegram", func(r chi.Router) {
