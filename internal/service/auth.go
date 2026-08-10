@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"slices"
 	"strconv"
@@ -49,10 +50,33 @@ type AuthService struct {
 	repo        AuthRepository
 	refreshRepo RefreshTokenRepository
 	cfg         *config.Config
+
+	// Email/password flow dependencies (auth_password.go). Their interfaces are
+	// declared in that file, at the consumer, per CLAUDE.md.
+	passwordRepo PasswordUserRepository
+	authStore    AuthStore
+	mailer       Mailer
+	log          *slog.Logger
 }
 
-func NewAuthService(repo AuthRepository, refreshRepo RefreshTokenRepository, cfg *config.Config) *AuthService {
-	return &AuthService{repo: repo, refreshRepo: refreshRepo, cfg: cfg}
+func NewAuthService(
+	repo AuthRepository,
+	passwordRepo PasswordUserRepository,
+	refreshRepo RefreshTokenRepository,
+	authStore AuthStore,
+	mailer Mailer,
+	cfg *config.Config,
+	log *slog.Logger,
+) *AuthService {
+	return &AuthService{
+		repo:         repo,
+		refreshRepo:  refreshRepo,
+		cfg:          cfg,
+		passwordRepo: passwordRepo,
+		authStore:    authStore,
+		mailer:       mailer,
+		log:          log,
+	}
 }
 
 func (s *AuthService) LoginGoogle(ctx context.Context, tokenString string) (*TokenPair, error) {

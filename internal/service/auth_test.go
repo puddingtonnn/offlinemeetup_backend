@@ -47,7 +47,7 @@ func computeTelegramHash(botToken string, params url.Values) string {
 
 func TestAuthService_validateTelegramHash(t *testing.T) {
 	cfg := &config.Config{TelegramBotToken: "bot-token"}
-	srv := NewAuthService(nil, nil, cfg)
+	srv := NewAuthService(nil, nil, nil, nil, nil, cfg, discardLog())
 
 	baseParams := func() url.Values {
 		p := url.Values{}
@@ -107,7 +107,7 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		defer ctrl.Finish()
 		repo := mocks.NewMockAuthRepository(ctrl)
 		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
-		srv := NewAuthService(repo, refresh, cfg)
+		srv := NewAuthService(repo, nil, refresh, nil, nil, cfg, discardLog())
 
 		p := url.Values{}
 		for k, v := range params {
@@ -129,7 +129,7 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		repo := mocks.NewMockAuthRepository(ctrl)
-		srv := NewAuthService(repo, nil, cfg)
+		srv := NewAuthService(repo, nil, nil, nil, nil, cfg, discardLog())
 
 		p := url.Values{}
 		for k, v := range params {
@@ -146,7 +146,7 @@ func TestAuthService_LoginTelegram(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		repo := mocks.NewMockAuthRepository(ctrl)
-		srv := NewAuthService(repo, nil, cfg)
+		srv := NewAuthService(repo, nil, nil, nil, nil, cfg, discardLog())
 
 		p := url.Values{}
 		p.Set("id", "555")
@@ -169,7 +169,7 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 	repo := mocks.NewMockAuthRepository(ctrl)
 	refresh := mocks.NewMockRefreshTokenRepository(ctrl)
 	cfg := &config.Config{JWTSecret: "test_secret", JWTAccessTTL: 15 * time.Minute, JWTRefreshTTL: 24 * time.Hour}
-	srv := NewAuthService(repo, refresh, cfg)
+	srv := NewAuthService(repo, nil, refresh, nil, nil, cfg, discardLog())
 
 	ctx := context.Background()
 	email := "dev@test.com"
@@ -282,7 +282,7 @@ func TestAuthService_IsActive(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			repo := mocks.NewMockAuthRepository(ctrl)
-			srv := NewAuthService(repo, nil, cfg)
+			srv := NewAuthService(repo, nil, nil, nil, nil, cfg, discardLog())
 
 			repo.EXPECT().GetByID(ctx, int64(1)).Return(tt.user, tt.repoErr)
 
@@ -303,7 +303,7 @@ func TestAuthService_GetCurrentUser(t *testing.T) {
 
 	repo := mocks.NewMockAuthRepository(ctrl)
 	cfg := &config.Config{}
-	srv := NewAuthService(repo, nil, cfg)
+	srv := NewAuthService(repo, nil, nil, nil, nil, cfg, discardLog())
 
 	ctx := context.Background()
 
@@ -355,7 +355,7 @@ func TestAuthService_Refresh(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
-		srv := NewAuthService(nil, refresh, cfg)
+		srv := NewAuthService(nil, nil, refresh, nil, nil, cfg, discardLog())
 
 		stored := &domain.RefreshToken{ID: 5, UserID: 7, ExpiresAt: time.Now().Add(time.Hour)}
 		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(stored, nil)
@@ -373,7 +373,7 @@ func TestAuthService_Refresh(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
-		srv := NewAuthService(nil, refresh, cfg)
+		srv := NewAuthService(nil, nil, refresh, nil, nil, cfg, discardLog())
 
 		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(nil, nil)
 
@@ -386,7 +386,7 @@ func TestAuthService_Refresh(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
-		srv := NewAuthService(nil, refresh, cfg)
+		srv := NewAuthService(nil, nil, refresh, nil, nil, cfg, discardLog())
 
 		revokedAt := time.Now().Add(-time.Minute)
 		stored := &domain.RefreshToken{ID: 5, UserID: 7, ExpiresAt: time.Now().Add(time.Hour), RevokedAt: &revokedAt}
@@ -402,7 +402,7 @@ func TestAuthService_Refresh(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
-		srv := NewAuthService(nil, refresh, cfg)
+		srv := NewAuthService(nil, nil, refresh, nil, nil, cfg, discardLog())
 
 		stored := &domain.RefreshToken{ID: 5, UserID: 7, ExpiresAt: time.Now().Add(-time.Hour)}
 		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(stored, nil)
@@ -421,7 +421,7 @@ func TestAuthService_Logout(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
-		srv := NewAuthService(nil, refresh, cfg)
+		srv := NewAuthService(nil, nil, refresh, nil, nil, cfg, discardLog())
 
 		stored := &domain.RefreshToken{ID: 9, UserID: 3}
 		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(stored, nil)
@@ -434,7 +434,7 @@ func TestAuthService_Logout(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		refresh := mocks.NewMockRefreshTokenRepository(ctrl)
-		srv := NewAuthService(nil, refresh, cfg)
+		srv := NewAuthService(nil, nil, refresh, nil, nil, cfg, discardLog())
 
 		refresh.EXPECT().GetByHash(ctx, gomock.Any()).Return(nil, nil)
 

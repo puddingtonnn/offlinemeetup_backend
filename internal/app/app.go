@@ -35,10 +35,9 @@ type App struct {
 	hub    *websocket.Hub
 	rdb    *redis.Client
 
-	// mailer/authStore/credentialsRepo are wired here but not yet consumed —
-	// AuthService's register/verify/login/forgot-reset methods land in Tasks 4-6.
-	mailer          mail.Mailer
-	authStore       *cache.RedisAuthStore
+	// credentialsRepo is wired here but not yet consumed — AuthService's
+	// login/forgot-reset methods (which read the stored hash) land in Tasks 5-6.
+	// mailer/authStore are consumed by AuthService's register/verify/resend.
 	credentialsRepo *repo.CredentialsRepo
 }
 
@@ -96,7 +95,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	mailer := mail.NewLogMailer(log)
 	authStore := cache.NewRedisAuthStore(rdb, log)
 
-	authService := service.NewAuthService(userRepo, refreshRepo, cfg)
+	authService := service.NewAuthService(userRepo, userRepo, refreshRepo, authStore, mailer, cfg, log)
 	profileCache := cache.NewProfileCache(cached, cacheMetrics, cfg.CacheTTLProfile)
 	profileService := service.NewProfileService(profileRepo, userRepo, profileCache, cfg.S3PublicURL)
 	meetupCache := cache.NewMeetupCache(cached, cacheMetrics, cfg.CacheTTLMeetup)
@@ -128,8 +127,6 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 		hub:    hub,
 		rdb:    rdb,
 
-		mailer:          mailer,
-		authStore:       authStore,
 		credentialsRepo: credentialsRepo,
 	}
 }
