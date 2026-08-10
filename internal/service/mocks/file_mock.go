@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	s3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	domain "github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -53,4 +54,48 @@ func (m *MockFileRepository) Create(ctx context.Context, file *domain.File) erro
 func (mr *MockFileRepositoryMockRecorder) Create(ctx, file any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockFileRepository)(nil).Create), ctx, file)
+}
+
+// MockS3PutObjectAPI is a mock of S3PutObjectAPI interface.
+type MockS3PutObjectAPI struct {
+	ctrl     *gomock.Controller
+	recorder *MockS3PutObjectAPIMockRecorder
+	isgomock struct{}
+}
+
+// MockS3PutObjectAPIMockRecorder is the mock recorder for MockS3PutObjectAPI.
+type MockS3PutObjectAPIMockRecorder struct {
+	mock *MockS3PutObjectAPI
+}
+
+// NewMockS3PutObjectAPI creates a new mock instance.
+func NewMockS3PutObjectAPI(ctrl *gomock.Controller) *MockS3PutObjectAPI {
+	mock := &MockS3PutObjectAPI{ctrl: ctrl}
+	mock.recorder = &MockS3PutObjectAPIMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockS3PutObjectAPI) EXPECT() *MockS3PutObjectAPIMockRecorder {
+	return m.recorder
+}
+
+// PutObject mocks base method.
+func (m *MockS3PutObjectAPI) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, params}
+	for _, a := range optFns {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PutObject", varargs...)
+	ret0, _ := ret[0].(*s3.PutObjectOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PutObject indicates an expected call of PutObject.
+func (mr *MockS3PutObjectAPIMockRecorder) PutObject(ctx, params any, optFns ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, params}, optFns...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutObject", reflect.TypeOf((*MockS3PutObjectAPI)(nil).PutObject), varargs...)
 }

@@ -43,19 +43,19 @@ type AttachmentResponse struct {
 
 // MessagePreview is a compact quoted message shown above a reply.
 type MessagePreview struct {
-	ID             int64  `json:"id"`
-	SenderID       int64  `json:"sender_id"`
-	SenderNickname string `json:"sender_nickname,omitempty"`
-	Content        string `json:"content"`
-	IsDeleted      bool   `json:"is_deleted"`
+	ID                int64  `json:"id"`
+	SenderID          int64  `json:"sender_id"`
+	SenderDisplayName string `json:"sender_display_name,omitempty"`
+	Content           string `json:"content"`
+	IsDeleted         bool   `json:"is_deleted"`
 }
 
-// PresenceResponse is one chat member's online state. Nickname is the display
+// PresenceResponse is one chat member's online state. DisplayName is the
 // name so clients render presence without a second lookup. LastSeen is a unix
 // timestamp (seconds), present only for offline members with a known last visit.
 type PresenceResponse struct {
-	UserID   int64  `json:"user_id"`
-	Online   bool   `json:"online"`
-	Nickname string `json:"nickname,omitempty"`
-	LastSeen *int64 `json:"last_seen,omitempty"`
+	UserID      int64  `json:"user_id"`
+	Online      bool   `json:"online"`
+	DisplayName string `json:"display_name,omitempty"`
+	LastSeen    *int64 `json:"last_seen,omitempty"`
 }

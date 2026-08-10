@@ -29,13 +29,13 @@ func (f *fakePeers) GetChatParticipantIDs(_ context.Context, chatID int64) ([]in
 
 // fakeNames is a hand-rolled profileNames so presence tests don't need the DB.
 type fakeNames struct {
-	nicknames map[int64]string
+	names map[int64]string
 }
 
-func (f *fakeNames) NicknamesByUserIDs(_ context.Context, ids []int64) (map[int64]string, error) {
+func (f *fakeNames) DisplayNamesByUserIDs(_ context.Context, ids []int64) (map[int64]string, error) {
 	out := make(map[int64]string, len(ids))
 	for _, id := range ids {
-		if n, ok := f.nicknames[id]; ok {
+		if n, ok := f.names[id]; ok {
 			out[id] = n
 		}
 	}
@@ -46,7 +46,7 @@ func newPresenceService(t *testing.T, peers *fakePeers) *PresenceService {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	names := &fakeNames{nicknames: map[int64]string{1: "alice", 2: "bob", 3: "carol"}}
+	names := &fakeNames{names: map[int64]string{1: "alice", 2: "bob", 3: "carol"}}
 	return NewPresenceService(cache.NewRedisPresenceStore(rdb), peers, names, time.Minute)
 }
 
@@ -102,7 +102,7 @@ func TestPresenceService_StatusForChat(t *testing.T) {
 	assert.True(t, byID[1].Online)
 	assert.False(t, byID[2].Online)
 
-	// Each status carries the display nickname so clients skip a second lookup.
-	assert.Equal(t, "alice", byID[1].Nickname)
-	assert.Equal(t, "bob", byID[2].Nickname)
+	// Each status carries the display name so clients skip a second lookup.
+	assert.Equal(t, "alice", byID[1].DisplayName)
+	assert.Equal(t, "bob", byID[2].DisplayName)
 }

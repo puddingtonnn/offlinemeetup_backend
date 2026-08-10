@@ -55,7 +55,7 @@ func newUpgrader(allowedOrigins []string) websocket.Upgrader {
 type Client struct {
 	userID      int64
 	connID      string
-	nickname    string
+	displayName string
 	hub         *Hub
 	conn        *websocket.Conn
 	send        chan []byte
@@ -235,7 +235,7 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 		}
 
 		req.UserID = c.userID
-		req.Nickname = c.nickname
+		req.DisplayName = c.displayName
 		newPayload, _ := json.Marshal(req)
 
 		responseEvent := WSEvent{
@@ -305,7 +305,7 @@ func (c *Client) markOffline() {
 	}
 	if offline && len(recipients) > 0 {
 		ls := lastSeen.Unix()
-		c.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOffline, c.userID, false, c.nickname, &ls))
+		c.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOffline, c.userID, false, c.displayName, &ls))
 	}
 }
 

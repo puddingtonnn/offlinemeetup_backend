@@ -36,7 +36,8 @@ func mapProfileToDTO(p *domain.Profile, s3URL string) *dto.ProfileResponse {
 	return &dto.ProfileResponse{
 		ID:          p.ID,
 		UserID:      p.UserID,
-		Nickname:    p.Nickname,
+		Username:    p.Username,
+		DisplayName: p.DisplayName,
 		Bio:         p.Bio,
 		AvatarURL:   publicURL(s3URL, p.AvatarFile),
 		IsOrganizer: p.IsOrganizer,

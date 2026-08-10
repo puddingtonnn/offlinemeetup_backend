@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
@@ -65,11 +66,11 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем никнейм один раз при подключении
-	nickname := "User"
+	// Получаем отображаемое имя один раз при подключении
+	displayName := "User"
 	profile, err := h.profileService.GetProfile(r.Context(), userID)
 	if err == nil && profile != nil {
-		nickname = profile.Nickname
+		displayName = domain.DisplayNameOf(profile.Username, profile.DisplayName)
 	}
 
 	// Создаем базовый контекст для этого конкретного соединения
@@ -78,7 +79,7 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 	client := &Client{
 		userID:      userID,
 		connID:      newConnID(),
-		nickname:    nickname,
+		displayName: displayName,
 		hub:         h.hub,
 		conn:        conn,
 		send:        make(chan []byte, 256),
@@ -132,7 +133,7 @@ func (h *WSHandler) announcePresence(userID int64, client *Client) {
 	if err != nil {
 		h.log.Error("presence: on connect", slog.Any("err", err))
 	} else if online && len(recipients) > 0 {
-		h.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOnline, userID, true, client.nickname, nil))
+		h.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOnline, userID, true, client.displayName, nil))
 	}
 
 	statuses, err := h.presenceService.SnapshotFor(ctx, userID)

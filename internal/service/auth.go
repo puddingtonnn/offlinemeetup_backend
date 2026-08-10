@@ -67,6 +67,14 @@ func (s *AuthService) LoginGoogle(ctx context.Context, tokenString string) (*Tok
 		email = val
 	}
 
+	// Google's `email` claim can be set for an unverified address (e.g. a
+	// custom domain the owner never confirmed). Since email becomes a
+	// cross-provider account-linking key, an unverified one must not be
+	// trusted for that purpose.
+	if verified, ok := payload.Claims["email_verified"].(bool); !ok || !verified {
+		return nil, errors.New("google email not verified")
+	}
+
 	user, err := s.findOrCreateUser(ctx, "google", socialID, email)
 	if err != nil {
 		return nil, err
@@ -166,9 +174,9 @@ func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, soc
 			Role:   "user",
 			Status: domain.UserStatusActive,
 		}
-		tempNick := fmt.Sprintf("user_%s", socialID)
+		tempUsername := fmt.Sprintf("user_%s", socialID)
 		newProfile := &domain.Profile{
-			Nickname:     tempNick,
+			Username:     tempUsername,
 			AvatarFileID: uuid.NullUUID{},
 			Bio:          "",
 		}

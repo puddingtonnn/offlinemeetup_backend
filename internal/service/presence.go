@@ -25,20 +25,20 @@ type chatPeers interface {
 	GetChatParticipantIDs(ctx context.Context, chatID int64) ([]int64, error)
 }
 
-// profileNames resolves display nicknames for a set of users so REST and WS
+// profileNames resolves display names for a set of users so REST and WS
 // snapshots can ship a name alongside each user_id. Declared at the consumer;
 // implemented by *repo.ProfileRepo.
 type profileNames interface {
-	NicknamesByUserIDs(ctx context.Context, ids []int64) (map[int64]string, error)
+	DisplayNamesByUserIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 }
 
 // PresenceStatus is one user's presence, returned for REST and WS snapshots.
 // LastSeen is set only when the user is offline and a timestamp is known.
 type PresenceStatus struct {
-	UserID   int64
-	Online   bool
-	Nickname string
-	LastSeen *time.Time
+	UserID      int64
+	Online      bool
+	DisplayName string
+	LastSeen    *time.Time
 }
 
 // PresenceService owns presence policy: connection accounting (delegated to the
@@ -146,14 +146,14 @@ func (s *PresenceService) statuses(ctx context.Context, ids []int64) ([]Presence
 	if err != nil {
 		return nil, fmt.Errorf("presence last seen: %w", err)
 	}
-	nicks, err := s.names.NicknamesByUserIDs(ctx, ids)
+	names, err := s.names.DisplayNamesByUserIDs(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("presence nicknames: %w", err)
+		return nil, fmt.Errorf("presence display names: %w", err)
 	}
 
 	out := make([]PresenceStatus, 0, len(ids))
 	for _, id := range ids {
-		st := PresenceStatus{UserID: id, Online: online[id], Nickname: nicks[id]}
+		st := PresenceStatus{UserID: id, Online: online[id], DisplayName: names[id]}
 		if !st.Online {
 			if ts, ok := seen[id]; ok {
 				t := ts

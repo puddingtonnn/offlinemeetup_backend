@@ -76,7 +76,8 @@ func (s *ProfileService) GetProfile(ctx context.Context, userID int64) (*dto.Pro
 		return &dto.ProfileResponse{
 			ID:          profile.ID,
 			UserID:      profile.UserID,
-			Nickname:    profile.Nickname,
+			Username:    profile.Username,
+			DisplayName: profile.DisplayName,
 			Bio:         profile.Bio,
 			AvatarURL:   avatarURL,
 			IsOrganizer: profile.IsOrganizer,
@@ -95,8 +96,12 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, req dt
 		existingProfile = &domain.Profile{UserID: userID}
 	}
 
-	if req.Nickname != nil {
-		existingProfile.Nickname = *req.Nickname
+	if req.Username != nil {
+		existingProfile.Username = *req.Username
+	}
+
+	if req.DisplayName != nil {
+		existingProfile.DisplayName = req.DisplayName
 	}
 
 	if req.Bio != nil {

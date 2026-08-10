@@ -28,11 +28,11 @@ func TestMapMeetupToDTO_Full(t *testing.T) {
 		IsMember:          true,
 		CoverFile:         &domain.File{Key: "uploads/cover.png"},
 		Creator: &domain.User{
-			Profile: &domain.Profile{ID: 10, UserID: 1, Nickname: "host", AvatarFile: &domain.File{Key: "uploads/a.png"}},
+			Profile: &domain.Profile{ID: 10, UserID: 1, Username: "host", AvatarFile: &domain.File{Key: "uploads/a.png"}},
 		},
 		Tags: []*domain.Tag{{ID: 1, Name: "Go"}, nil, {ID: 2, Name: "Backend"}},
 		Participants: []*domain.User{
-			{Profile: &domain.Profile{ID: 11, UserID: 2, Nickname: "guest"}},
+			{Profile: &domain.Profile{ID: 11, UserID: 2, Username: "guest"}},
 			{Profile: nil}, // должен быть пропущен
 		},
 	}
@@ -49,7 +49,7 @@ func TestMapMeetupToDTO_Full(t *testing.T) {
 	assert.Equal(t, 1234, *dto.DistanceMeters)
 
 	require.NotNil(t, dto.Creator)
-	assert.Equal(t, "host", dto.Creator.Nickname)
+	assert.Equal(t, "host", dto.Creator.Username)
 	assert.Equal(t, testS3+"/uploads/a.png", dto.Creator.AvatarURL)
 
 	// nil-тег пропущен.
@@ -58,7 +58,7 @@ func TestMapMeetupToDTO_Full(t *testing.T) {
 
 	// участник без профиля пропущен.
 	require.Len(t, dto.Participants, 1)
-	assert.Equal(t, "guest", dto.Participants[0].Nickname)
+	assert.Equal(t, "guest", dto.Participants[0].Username)
 }
 
 func TestMapMeetupToDTO_NoDistanceNoCover(t *testing.T) {
