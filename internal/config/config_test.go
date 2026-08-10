@@ -2,16 +2,21 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // setRequiredSecrets задаёт обязательные секреты, без которых Load теперь падает.
+// APP_ENV явно фиксируется в "local", чтобы MAIL_SMTP_* не требовались (см.
+// TestLoad_MailSMTPRequiredOutsideLocalDev для проверки обратного случая) —
+// и чтобы случайный APP_ENV в окружении процесса не влиял на тест.
 func setRequiredSecrets(t *testing.T) {
 	t.Helper()
 	t.Setenv("JWT_SECRET_KEY", "test-jwt-secret")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "test-telegram-token")
+	t.Setenv("APP_ENV", "local")
 }
 
 func TestLoad_RedisDefaults(t *testing.T) {
@@ -85,4 +90,63 @@ func TestLoad_MaxUploadSizeOverride(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, int64(52428800), cfg.MaxUploadSize)
+}
+
+func TestLoad_MailAndAuthDefaults(t *testing.T) {
+	setRequiredSecrets(t)
+	t.Setenv("DB_DSN", "postgres://localhost/test")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 10*time.Second, cfg.MailSendTimeout)
+	assert.Equal(t, 15*time.Minute, cfg.EmailCodeTTL)
+	assert.Equal(t, 5, cfg.EmailCodeMaxAttempts)
+	assert.Equal(t, 60*time.Second, cfg.EmailResendCooldown)
+	assert.Equal(t, 5, cfg.EmailSendQuotaPerHour)
+	assert.Equal(t, 10, cfg.LoginFailLimit)
+	assert.Equal(t, 15*time.Minute, cfg.LoginFailWindow)
+}
+
+func TestLoad_MailSMTPEmptyOKInLocalDev(t *testing.T) {
+	setRequiredSecrets(t) // APP_ENV=local
+	t.Setenv("DB_DSN", "postgres://localhost/test")
+	t.Setenv("MAIL_SMTP_HOST", "")
+	t.Setenv("MAIL_SMTP_PORT", "")
+	t.Setenv("MAIL_SMTP_USER", "")
+	t.Setenv("MAIL_SMTP_PASSWORD", "")
+	t.Setenv("MAIL_FROM", "")
+
+	_, err := Load()
+	require.NoError(t, err)
+}
+
+func TestLoad_MailSMTPRequiredOutsideLocalDev(t *testing.T) {
+	t.Setenv("JWT_SECRET_KEY", "test-jwt-secret")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-telegram-token")
+	t.Setenv("DB_DSN", "postgres://localhost/test")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("MAIL_SMTP_HOST", "")
+	t.Setenv("MAIL_SMTP_PORT", "")
+	t.Setenv("MAIL_SMTP_USER", "")
+	t.Setenv("MAIL_SMTP_PASSWORD", "")
+	t.Setenv("MAIL_FROM", "")
+
+	_, err := Load()
+	require.Error(t, err)
+}
+
+func TestLoad_MailSMTPCompleteOutsideLocalDev(t *testing.T) {
+	t.Setenv("JWT_SECRET_KEY", "test-jwt-secret")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-telegram-token")
+	t.Setenv("DB_DSN", "postgres://localhost/test")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("MAIL_SMTP_HOST", "smtp.example.com")
+	t.Setenv("MAIL_SMTP_PORT", "587")
+	t.Setenv("MAIL_SMTP_USER", "user")
+	t.Setenv("MAIL_SMTP_PASSWORD", "pass")
+	t.Setenv("MAIL_FROM", "noreply@example.com")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "smtp.example.com", cfg.MailSMTPHost)
 }
