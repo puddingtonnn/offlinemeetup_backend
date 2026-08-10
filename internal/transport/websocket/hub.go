@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/safego"
 )
 
 // BroadcastMessage is the Hub's internal delivery unit (after decoding from the
@@ -234,7 +236,7 @@ func (h *Hub) trySend(client *Client, payload []byte) {
 		// (под broadcast), а h.unregister читает та же горутина — прямая
 		// запись сюда привела бы к deadlock'у всего хаба. Селект на done, чтобы
 		// при остановке хаба эта горутина не зависла навсегда.
-		safeGo(h.log, func() {
+		safego.Go(h.log, func() {
 			select {
 			case h.unregister <- client:
 			case <-h.done:

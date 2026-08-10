@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/safego"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 )
 
@@ -164,7 +165,7 @@ func (c *Client) eventPump(ctx context.Context) {
 }
 
 func (c *Client) handleEventGuarded(ctx context.Context, event WSEvent) {
-	defer recoverPanic(c.log, "ws event handler")
+	defer safego.Recover(c.log, "ws event handler")
 	c.handleEvent(ctx, event)
 }
 
@@ -374,7 +375,7 @@ func (c *Client) writePump(ctx context.Context, cancel context.CancelFunc) {
 			// Refresh presence TTL on the same tick as the WS ping so a live
 			// connection never decays to offline. Best-effort, off the write path.
 			if c.presence != nil {
-				safeGo(c.log, func() {
+				safego.Go(c.log, func() {
 					hbCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
 					if err := c.presence.Heartbeat(hbCtx, c.userID); err != nil {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/safego"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/middleware"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/response"
@@ -109,12 +110,12 @@ func (h *WSHandler) ServeWs(w http.ResponseWriter, r *http.Request) {
 	// send буферизирован, поэтому снапшот дождётся writePump. Best-effort.
 	h.announcePresence(userID, client)
 
-	// Каждая горутина соединения — под safeGo: паника в одной изолирована и не
-	// роняет процесс. eventPump — единственный воркер, обрабатывающий события по
-	// порядку.
-	safeGo(h.log, func() { client.writePump(ctx, cancel) })
-	safeGo(h.log, func() { client.eventPump(ctx) })
-	safeGo(h.log, func() { client.readPump(ctx, cancel) })
+	// Каждая горутина соединения — под safego.Go: паника в одной изолирована и
+	// не роняет процесс. eventPump — единственный воркер, обрабатывающий события
+	// по порядку.
+	safego.Go(h.log, func() { client.writePump(ctx, cancel) })
+	safego.Go(h.log, func() { client.eventPump(ctx) })
+	safego.Go(h.log, func() { client.readPump(ctx, cancel) })
 }
 
 // announcePresence marks the user online, broadcasts userOnline to co-chat
