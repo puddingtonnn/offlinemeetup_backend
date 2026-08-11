@@ -15,6 +15,43 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/v1/auth/forgot-password": {
+            "post": {
+                "description": "Принимает login (email или username) и всегда отвечает 202 — независимо от того, существует ли такой аккаунт, чтобы эндпоинт не подсказывал, какие аккаунты зарегистрированы. Код для сброса отправляется на email, только если аккаунт найден.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Запросить сброс пароля",
+                "parameters": [
+                    {
+                        "description": "Login",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ForgotPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ValidationErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/google": {
             "post": {
                 "description": "Принимает ID Token от Google SDK, возвращает JWT.",
@@ -51,6 +88,58 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/login": {
+            "post": {
+                "description": "Принимает login (email или username — определяется по наличию '@') и пароль, возвращает пару токенов. Неизвестный login и неверный пароль дают одинаковую ошибку.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Вход по email/username и паролю",
+                "parameters": [
+                    {
+                        "description": "Login, пароль",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AuthTokensResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ValidationErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/response.ErrorResponse"
                         }
@@ -123,6 +212,51 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/auth/password": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Меняет пароль текущего аккаунта. Если у аккаунта ещё нет пароля (вход был только через Google/Telegram), current_password не проверяется. Все refresh-токены пользователя отзываются.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Сменить пароль",
+                "parameters": [
+                    {
+                        "description": "Текущий и новый пароль",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ChangePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ValidationErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/refresh": {
             "post": {
                 "description": "Принимает refresh_token, ротирует его и возвращает новую пару токенов.",
@@ -163,6 +297,129 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/auth/register": {
+            "post": {
+                "description": "Создаёт «ожидающую» регистрацию и отправляет код подтверждения на email. Пользователь в БД не создаётся до подтверждения. Ответ одинаков независимо от того, существует ли уже аккаунт с таким email.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Регистрация по email и паролю",
+                "parameters": [
+                    {
+                        "description": "Email, username, пароль",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ValidationErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/resend-code": {
+            "post": {
+                "description": "Генерирует новый код для незавершённой регистрации. Отвечает 202 и в том случае, когда незавершённой регистрации нет — чтобы эндпоинт не подсказывал, какие email заняты.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Отправить код подтверждения повторно",
+                "parameters": [
+                    {
+                        "description": "Email",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ResendCodeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ValidationErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/reset-password": {
+            "post": {
+                "description": "Проверяет код из письма и устанавливает новый пароль. Не логинит — все refresh-токены пользователя отзываются.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Завершить сброс пароля",
+                "parameters": [
+                    {
+                        "description": "Email, код, новый пароль",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ResetPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ValidationErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/telegram/callback": {
             "get": {
                 "description": "Принимает GET параметры от Telegram, валидирует, логинит и редиректит в приложение с токеном.",
@@ -188,6 +445,58 @@ const docTemplate = `{
                         "description": "HTML page with Telegram login widget",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/verify-email": {
+            "post": {
+                "description": "Проверяет код из письма, создаёт аккаунт (или добавляет пароль к существующему) и возвращает пару токенов. Если username заняли, пока код был в пути, вернётся 409 — повторите запрос с другим username.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Подтвердить email и завершить регистрацию",
+                "parameters": [
+                    {
+                        "description": "Email, код, опционально другой username",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.VerifyEmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AuthTokensResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ValidationErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
                         }
                     }
                 }
@@ -1405,6 +1714,17 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ChangePasswordRequest": {
+            "type": "object",
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ChatResponse": {
             "type": "object",
             "properties": {
@@ -1481,6 +1801,25 @@ const docTemplate = `{
                     }
                 },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ForgotPasswordRequest": {
+            "type": "object",
+            "properties": {
+                "login": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.LoginRequest": {
+            "type": "object",
+            "properties": {
+                "login": {
+                    "type": "string"
+                },
+                "password": {
                     "type": "string"
                 }
             }
@@ -1562,11 +1901,11 @@ const docTemplate = `{
                 "is_deleted": {
                     "type": "boolean"
                 },
+                "sender_display_name": {
+                    "type": "string"
+                },
                 "sender_id": {
                     "type": "integer"
-                },
-                "sender_nickname": {
-                    "type": "string"
                 }
             }
         },
@@ -1614,11 +1953,11 @@ const docTemplate = `{
         "dto.PresenceResponse": {
             "type": "object",
             "properties": {
+                "display_name": {
+                    "type": "string"
+                },
                 "last_seen": {
                     "type": "integer"
-                },
-                "nickname": {
-                    "type": "string"
                 },
                 "online": {
                     "type": "boolean"
@@ -1637,14 +1976,14 @@ const docTemplate = `{
                 "bio": {
                     "type": "string"
                 },
+                "display_name": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
                 },
                 "is_organizer": {
                     "type": "boolean"
-                },
-                "nickname": {
-                    "type": "string"
                 },
                 "tags": {
                     "type": "array",
@@ -1654,6 +1993,45 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.RegisterRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ResendCodeRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ResetPasswordRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string"
                 }
             }
         },
@@ -1712,7 +2090,7 @@ const docTemplate = `{
                 "bio": {
                     "type": "string"
                 },
-                "nickname": {
+                "display_name": {
                     "type": "string"
                 },
                 "tags": {
@@ -1720,6 +2098,23 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.VerifyEmailRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
                 }
             }
         },
@@ -1775,6 +2170,20 @@ const docTemplate = `{
             "properties": {
                 "error": {
                     "type": "string"
+                }
+            }
+        },
+        "response.ValidationErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 }
             }
         }

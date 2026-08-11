@@ -37,6 +37,13 @@ definitions:
       token_type:
         type: string
     type: object
+  dto.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
   dto.ChatResponse:
     properties:
       id:
@@ -86,6 +93,18 @@ definitions:
           type: integer
         type: array
       title:
+        type: string
+    type: object
+  dto.ForgotPasswordRequest:
+    properties:
+      login:
+        type: string
+    type: object
+  dto.LoginRequest:
+    properties:
+      login:
+        type: string
+      password:
         type: string
     type: object
   dto.MeetupResponse:
@@ -139,10 +158,10 @@ definitions:
         type: integer
       is_deleted:
         type: boolean
+      sender_display_name:
+        type: string
       sender_id:
         type: integer
-      sender_nickname:
-        type: string
     type: object
   dto.MessageResponse:
     properties:
@@ -173,10 +192,10 @@ definitions:
     type: object
   dto.PresenceResponse:
     properties:
+      display_name:
+        type: string
       last_seen:
         type: integer
-      nickname:
-        type: string
       online:
         type: boolean
       user_id:
@@ -188,18 +207,43 @@ definitions:
         type: string
       bio:
         type: string
+      display_name:
+        type: string
       id:
         type: integer
       is_organizer:
         type: boolean
-      nickname:
-        type: string
       tags:
         items:
           $ref: '#/definitions/dto.TagResponse'
         type: array
       user_id:
         type: integer
+      username:
+        type: string
+    type: object
+  dto.RegisterRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  dto.ResendCodeRequest:
+    properties:
+      email:
+        type: string
+    type: object
+  dto.ResetPasswordRequest:
+    properties:
+      code:
+        type: string
+      email:
+        type: string
+      new_password:
+        type: string
     type: object
   dto.TagResponse:
     properties:
@@ -237,12 +281,23 @@ definitions:
         type: string
       bio:
         type: string
-      nickname:
+      display_name:
         type: string
       tags:
         items:
           type: integer
         type: array
+      username:
+        type: string
+    type: object
+  dto.VerifyEmailRequest:
+    properties:
+      code:
+        type: string
+      email:
+        type: string
+      username:
+        type: string
     type: object
   handler.EditMessageRequest:
     properties:
@@ -283,12 +338,48 @@ definitions:
       error:
         type: string
     type: object
+  response.ValidationErrorResponse:
+    properties:
+      error:
+        type: string
+      fields:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
 info:
   contact: {}
   description: API Server for Mobile Application "Meetuper"
   title: Offline Meetup API
   version: "1.0"
 paths:
+  /v1/auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Принимает login (email или username) и всегда отвечает 202 — независимо
+        от того, существует ли такой аккаунт, чтобы эндпоинт не подсказывал, какие
+        аккаунты зарегистрированы. Код для сброса отправляется на email, только если
+        аккаунт найден.
+      parameters:
+      - description: Login
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ValidationErrorResponse'
+      summary: Запросить сброс пароля
+      tags:
+      - Auth
   /v1/auth/google:
     post:
       consumes:
@@ -315,6 +406,42 @@ paths:
           schema:
             $ref: '#/definitions/response.ErrorResponse'
       summary: Вход через Google
+      tags:
+      - Auth
+  /v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Принимает login (email или username — определяется по наличию '@')
+        и пароль, возвращает пару токенов. Неизвестный login и неверный пароль дают
+        одинаковую ошибку.
+      parameters:
+      - description: Login, пароль
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AuthTokensResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ValidationErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Вход по email/username и паролю
       tags:
       - Auth
   /v1/auth/logout:
@@ -358,6 +485,36 @@ paths:
       summary: Получить данные моего аккаунта
       tags:
       - Auth
+  /v1/auth/password:
+    patch:
+      consumes:
+      - application/json
+      description: Меняет пароль текущего аккаунта. Если у аккаунта ещё нет пароля
+        (вход был только через Google/Telegram), current_password не проверяется.
+        Все refresh-токены пользователя отзываются.
+      parameters:
+      - description: Текущий и новый пароль
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ChangePasswordRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ValidationErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Сменить пароль
+      tags:
+      - Auth
   /v1/auth/refresh:
     post:
       consumes:
@@ -384,6 +541,91 @@ paths:
       summary: Обновить токены
       tags:
       - Auth
+  /v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Создаёт «ожидающую» регистрацию и отправляет код подтверждения
+        на email. Пользователь в БД не создаётся до подтверждения. Ответ одинаков
+        независимо от того, существует ли уже аккаунт с таким email.
+      parameters:
+      - description: Email, username, пароль
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ValidationErrorResponse'
+      summary: Регистрация по email и паролю
+      tags:
+      - Auth
+  /v1/auth/resend-code:
+    post:
+      consumes:
+      - application/json
+      description: Генерирует новый код для незавершённой регистрации. Отвечает 202
+        и в том случае, когда незавершённой регистрации нет — чтобы эндпоинт не подсказывал,
+        какие email заняты.
+      parameters:
+      - description: Email
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResendCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ValidationErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Отправить код подтверждения повторно
+      tags:
+      - Auth
+  /v1/auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Проверяет код из письма и устанавливает новый пароль. Не логинит
+        — все refresh-токены пользователя отзываются.
+      parameters:
+      - description: Email, код, новый пароль
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ValidationErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Завершить сброс пароля
+      tags:
+      - Auth
   /v1/auth/telegram/callback:
     get:
       description: Принимает GET параметры от Telegram, валидирует, логинит и редиректит
@@ -404,6 +646,42 @@ paths:
           schema:
             type: string
       summary: Вход через Telegram
+      tags:
+      - Auth
+  /v1/auth/verify-email:
+    post:
+      consumes:
+      - application/json
+      description: Проверяет код из письма, создаёт аккаунт (или добавляет пароль
+        к существующему) и возвращает пару токенов. Если username заняли, пока код
+        был в пути, вернётся 409 — повторите запрос с другим username.
+      parameters:
+      - description: Email, код, опционально другой username
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/dto.VerifyEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AuthTokensResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ValidationErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Подтвердить email и завершить регистрацию
       tags:
       - Auth
   /v1/chats:
