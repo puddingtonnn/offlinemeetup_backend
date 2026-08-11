@@ -140,6 +140,21 @@ func (mr *MockAuthStoreMockRecorder) CheckAndSetMailCooldown(ctx, email, cooldow
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckAndSetMailCooldown", reflect.TypeOf((*MockAuthStore)(nil).CheckAndSetMailCooldown), ctx, email, cooldown)
 }
 
+// CheckAndSetMailResetCooldown mocks base method.
+func (m *MockAuthStore) CheckAndSetMailResetCooldown(ctx context.Context, email string, cooldown time.Duration) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckAndSetMailResetCooldown", ctx, email, cooldown)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CheckAndSetMailResetCooldown indicates an expected call of CheckAndSetMailResetCooldown.
+func (mr *MockAuthStoreMockRecorder) CheckAndSetMailResetCooldown(ctx, email, cooldown any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckAndSetMailResetCooldown", reflect.TypeOf((*MockAuthStore)(nil).CheckAndSetMailResetCooldown), ctx, email, cooldown)
+}
+
 // DeletePendingReg mocks base method.
 func (m *MockAuthStore) DeletePendingReg(ctx context.Context, email string) error {
 	m.ctrl.T.Helper()
@@ -228,6 +243,21 @@ func (m *MockAuthStore) IncrementMailQuota(ctx context.Context, email string, wi
 func (mr *MockAuthStoreMockRecorder) IncrementMailQuota(ctx, email, window any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementMailQuota", reflect.TypeOf((*MockAuthStore)(nil).IncrementMailQuota), ctx, email, window)
+}
+
+// IncrementMailResetQuota mocks base method.
+func (m *MockAuthStore) IncrementMailResetQuota(ctx context.Context, email string, window time.Duration) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementMailResetQuota", ctx, email, window)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementMailResetQuota indicates an expected call of IncrementMailResetQuota.
+func (mr *MockAuthStoreMockRecorder) IncrementMailResetQuota(ctx, email, window any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementMailResetQuota", reflect.TypeOf((*MockAuthStore)(nil).IncrementMailResetQuota), ctx, email, window)
 }
 
 // IncrementPendingRegAttempts mocks base method.

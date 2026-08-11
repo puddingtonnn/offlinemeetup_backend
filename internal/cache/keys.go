@@ -19,6 +19,17 @@ const (
 	loginFailPrefix    = "auth:login_fail:"
 	mailCooldownPrefix = "auth:mail_cooldown:"
 	mailQuotaPrefix    = "auth:mail_quota:"
+
+	// Password-reset (forgot-password) flow gets its OWN cooldown/quota key
+	// namespace, separate from mailCooldownPrefix/mailQuotaPrefix which are
+	// shared by Register/ResendCode. Sharing one namespace between the two
+	// flows was a cross-endpoint account-enumeration oracle: ForgotPassword
+	// only claims the shared key on the found-account path, but ResendCode
+	// reports a hit on that same key as a visible 429 — two calls (forgot-
+	// password then resend-code on the same email) would then deterministically
+	// reveal whether the account exists. See task-6 report, Critical #1.
+	mailResetCooldownPrefix = "auth:mail_reset_cooldown:"
+	mailResetQuotaPrefix    = "auth:mail_reset_quota:"
 )
 
 // UserChatsKey возвращает ключ со списком чатов пользователя.
@@ -80,4 +91,19 @@ func MailCooldownKey(email string) string {
 // MailQuotaKey — ключ часовой квоты на отправку писем для одного email.
 func MailQuotaKey(email string) string {
 	return mailQuotaPrefix + strings.ToLower(strings.TrimSpace(email))
+}
+
+// MailResetCooldownKey — кулдаун-ключ анти-даблклика для forgot-password,
+// в ОТДЕЛЬНОМ пространстве ключей от MailCooldownKey (см. комментарий у
+// mailResetCooldownPrefix — общий namespace с ResendCode был oracle'ом
+// существования аккаунта).
+func MailResetCooldownKey(email string) string {
+	return mailResetCooldownPrefix + strings.ToLower(strings.TrimSpace(email))
+}
+
+// MailResetQuotaKey — часовая квота на отправку писем сброса пароля, в
+// ОТДЕЛЬНОМ пространстве ключей от MailQuotaKey (та же причина, что у
+// MailResetCooldownKey).
+func MailResetQuotaKey(email string) string {
+	return mailResetQuotaPrefix + strings.ToLower(strings.TrimSpace(email))
 }

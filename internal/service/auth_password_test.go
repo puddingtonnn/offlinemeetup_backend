@@ -588,7 +588,7 @@ func TestAuthService_ForgotPassword_KnownLogin_SendsMailAndSavesPendingReset(t *
 
 	const userID = int64(42)
 	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(userID, nil)
-	f.authRepo.EXPECT().GetByID(ctx, userID).Return(&domain.User{ID: userID, Email: testNormEmail}, nil)
+	f.authRepo.EXPECT().GetByID(gomock.Any(), userID).Return(&domain.User{ID: userID, Email: testNormEmail}, nil)
 
 	err := f.svc.ForgotPassword(ctx, testUsername)
 	require.NoError(t, err)
@@ -615,7 +615,7 @@ func TestAuthService_ForgotPassword_SameExternalOutcomeBothCases(t *testing.T) {
 
 	const userID = int64(7)
 	f.repo.EXPECT().FindIDByEmail(ctx, "known@example.com").Return(userID, nil)
-	f.authRepo.EXPECT().GetByID(ctx, userID).Return(&domain.User{ID: userID, Email: "known@example.com"}, nil)
+	f.authRepo.EXPECT().GetByID(gomock.Any(), userID).Return(&domain.User{ID: userID, Email: "known@example.com"}, nil)
 	errKnown := f.svc.ForgotPassword(ctx, "known@example.com")
 
 	assert.NoError(t, errUnknown)
@@ -629,25 +629,115 @@ func TestAuthService_ForgotPassword_CooldownActive_SilentlySkipsSend(t *testing.
 	ctx := context.Background()
 
 	const userID = int64(42)
+	secondGetByIDDone := make(chan struct{})
+
 	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(userID, nil).Times(2)
-	f.authRepo.EXPECT().GetByID(ctx, userID).Return(&domain.User{ID: userID, Email: testNormEmail}, nil).Times(2)
+	first := f.authRepo.EXPECT().GetByID(gomock.Any(), userID).Return(&domain.User{ID: userID, Email: testNormEmail}, nil)
+	f.authRepo.EXPECT().GetByID(gomock.Any(), userID).DoAndReturn(func(_ context.Context, _ int64) (*domain.User, error) {
+		defer close(secondGetByIDDone)
+		return &domain.User{ID: userID, Email: testNormEmail}, nil
+	}).After(first)
 
 	require.NoError(t, f.svc.ForgotPassword(ctx, testUsername))
 	f.mailer.wait(t)
 
 	// Second call within the cooldown window: still nil (202), but no second
-	// email and the pending code from the first call survives untouched.
+	// email and the pending code from the first call survives untouched. The
+	// found-path work now runs in a background goroutine (Critical #2 fix),
+	// so we synchronize on the second call's GetByID actually having run
+	// before asserting "no mail" — otherwise this assertion could pass
+	// trivially just because the goroutine hadn't started yet.
 	pendingBefore, _, err := f.store.GetPendingReset(ctx, testNormEmail)
 	require.NoError(t, err)
 
 	err = f.svc.ForgotPassword(ctx, testUsername)
 	assert.NoError(t, err, "a cooldown hit must not change the external always-202 contract")
+
+	select {
+	case <-secondGetByIDDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected the second call's background goroutine to reach GetByID")
+	}
+	// GetByID completing doesn't itself guarantee the very next step (the
+	// cooldown check, same goroutine) has also finished — it's a single
+	// in-process miniredis round trip, not real I/O, so a short grace
+	// window is enough without resorting to a raw fixed sleep as the ONLY
+	// synchronization (which the GetByID rendezvous above already avoids).
+	time.Sleep(50 * time.Millisecond)
+
 	f.mailer.assertNoMail(t)
 
 	pendingAfter, found, err := f.store.GetPendingReset(ctx, testNormEmail)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, pendingBefore.CodeHash, pendingAfter.CodeHash)
+}
+
+// ForgotPassword's found-path work (GetByID, cooldown/quota, code
+// generation, SavePendingReset, send) must run in the background, not
+// before the function returns — otherwise the found/not-found timing
+// difference is a measurable account-enumeration oracle (Critical #2: unlike
+// Login, nothing in this flow pays a bcrypt cost, so there's no floor to
+// hide extra round trips under). This proves it structurally: GetByID is
+// blocked until the test releases it, and ForgotPassword must still return
+// well before that.
+func TestAuthService_ForgotPassword_FoundPathWorkIsAsynchronous(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	const userID = int64(42)
+	release := make(chan struct{})
+	getByIDCalled := make(chan struct{})
+
+	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(userID, nil)
+	f.authRepo.EXPECT().GetByID(gomock.Any(), userID).DoAndReturn(func(_ context.Context, _ int64) (*domain.User, error) {
+		close(getByIDCalled)
+		<-release
+		return &domain.User{ID: userID, Email: testNormEmail}, nil
+	})
+
+	start := time.Now()
+	err := f.svc.ForgotPassword(ctx, testUsername)
+	elapsed := time.Since(start)
+	require.NoError(t, err)
+	assert.Less(t, elapsed, 200*time.Millisecond,
+		"ForgotPassword must return without waiting on the background GetByID call")
+
+	select {
+	case <-getByIDCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background goroutine never called GetByID — found-path work did not run at all")
+	}
+
+	close(release)
+	f.mailer.wait(t) // background work eventually completes and sends mail
+}
+
+// A Telegram-only account (findOrCreateUser creates these with Email: "")
+// hitting ForgotPassword must not error, must not send mail, and must not
+// touch a shared ""-keyed cooldown/quota/pending namespace across every
+// emailless user (Important #3).
+func TestAuthService_ForgotPassword_EmaillessUser_SilentNoOp(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	const userID = int64(55)
+	getByIDDone := make(chan struct{})
+	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(userID, nil)
+	f.authRepo.EXPECT().GetByID(gomock.Any(), userID).DoAndReturn(func(_ context.Context, _ int64) (*domain.User, error) {
+		defer close(getByIDDone)
+		return &domain.User{ID: userID, Email: ""}, nil
+	})
+
+	err := f.svc.ForgotPassword(ctx, testUsername)
+	assert.NoError(t, err, "a Telegram-only account must still report plain success")
+
+	select {
+	case <-getByIDDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected the background goroutine to reach GetByID")
+	}
+	f.mailer.assertNoMail(t)
 }
 
 // --- ResetPassword -----------------------------------------------------------
@@ -694,6 +784,46 @@ func TestAuthService_ResetPassword_WrongCode_400(t *testing.T) {
 func TestAuthService_ResetPassword_NoPendingIs400(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	err := f.svc.ResetPassword(context.Background(), testEmail, "123456", "a brand new password")
+	assert.ErrorIs(t, err, ErrInvalidInput)
+}
+
+// Mirrors TestAuthService_VerifyEmail_WrongCodeExhaustsAttempts: the reset
+// flow's attempt counter (IncrementPendingResetAttempts) must burn out the
+// same way VerifyEmail's does, dropping the pending object once
+// EmailCodeMaxAttempts is reached.
+func TestAuthService_ResetPassword_WrongCodeExhaustsAttempts(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	code := seedPendingReset(t, f)
+
+	wrong := "000000"
+	if wrong == code {
+		wrong = "111111"
+	}
+
+	// EmailCodeMaxAttempts is 3 in the fixture: two wrong codes are plain 400s.
+	for i := 0; i < f.cfg.EmailCodeMaxAttempts-1; i++ {
+		err := f.svc.ResetPassword(ctx, testEmail, wrong, "a brand new password")
+		assert.ErrorIs(t, err, ErrInvalidInput, "attempt %d", i+1)
+
+		pending, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)
+		require.NoError(t, storeErr)
+		require.True(t, found, "pending survives a merely-wrong code")
+		assert.Equal(t, i+1, pending.Attempts)
+	}
+
+	// The last one burns the allowance: 429 and the pending object is gone.
+	// No repo/credRepo/refresh EXPECT is set anywhere in this test — a wrong
+	// code must never touch any of them.
+	err := f.svc.ResetPassword(ctx, testEmail, wrong, "a brand new password")
+	assert.ErrorIs(t, err, ErrTooManyRequests)
+
+	_, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)
+	require.NoError(t, storeErr)
+	assert.False(t, found, "pending is invalidated once attempts are exhausted")
+
+	// Even the RIGHT code no longer works — the reset must be restarted.
+	err = f.svc.ResetPassword(ctx, testEmail, code, "a brand new password")
 	assert.ErrorIs(t, err, ErrInvalidInput)
 }
 

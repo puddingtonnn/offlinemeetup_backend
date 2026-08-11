@@ -54,6 +54,12 @@ type AuthStore interface {
 	GetPendingReset(ctx context.Context, email string) (cache.PendingReg, bool, error)
 	DeletePendingReset(ctx context.Context, email string) error
 	IncrementPendingResetAttempts(ctx context.Context, email string) (int, error)
+	// Reset-flow mail cooldown/quota (fix round, Critical #1): a SEPARATE key
+	// namespace from CheckAndSetMailCooldown/IncrementMailQuota above, so
+	// ForgotPassword's conditional (found-only) claim can never be observed
+	// through ResendCode's visible 429 on the same key.
+	CheckAndSetMailResetCooldown(ctx context.Context, email string, cooldown time.Duration) (bool, error)
+	IncrementMailResetQuota(ctx context.Context, email string, window time.Duration) (int, error)
 }
 
 // Mailer sends a plain-text email. Consumer-side declaration of
@@ -396,16 +402,24 @@ func (s *AuthService) dropPending(ctx context.Context, email string) {
 // attacker) for "no such account" would turn this endpoint into exactly the
 // oracle ADR-7 spends the whole register flow avoiding.
 //
-// The mail cooldown/quota (Task 3, same controls ResendCode uses) is only
-// applied on the found-user path — there's no email to key it by for an
-// unknown login — and a cooldown/quota hit is a SILENT skip (still returns
-// nil): the external response never varies, so nothing is leaked through the
-// status code or body. This does leave a residual timing/round-trip-count
-// difference between "found, cooldown active" and "not found" (an extra
-// Redis round trip on the found path) — the same class of residual risk
-// already flagged in Task 5's Login (its concern #1: only the bcrypt cost is
-// pinned identical, not every round trip), not a new gap introduced here. See
-// the task-6 report for the full reasoning.
+// Fix round (Critical #2): everything past the initial login→userID lookup
+// (GetByID, cooldown/quota checks, code generation, SavePendingReset, the
+// send) runs in a BACKGROUND goroutine (forgotPasswordAsync), not before
+// this function returns. Unlike Login, nothing in this flow pays a bcrypt
+// cost, so there was no ~300ms floor to hide the found path's extra 2
+// Postgres + 2-3 Redis round trips under — that made the found/not-found
+// timing difference a practically measurable oracle, not just a
+// theoretical one. Now both branches cost exactly the one initial lookup
+// before returning.
+//
+// The reset-flow cooldown/quota also moved to its OWN key namespace
+// (cache.MailResetCooldownKey/MailResetQuotaKey via
+// CheckAndSetMailResetCooldown/IncrementMailResetQuota) — Critical #1: the
+// previous code shared ResendCode's cache.MailCooldownKey/MailQuotaKey, and
+// since ForgotPassword only claims that key on the found-account path while
+// ResendCode reports a hit on it as a visible 429, calling
+// forgot-password then resend-code on the same email was a deterministic
+// two-request account-existence oracle.
 func (s *AuthService) ForgotPassword(ctx context.Context, login string) error {
 	login = strings.TrimSpace(login)
 
@@ -420,61 +434,102 @@ func (s *AuthService) ForgotPassword(ctx context.Context, login string) error {
 	}
 	switch {
 	case err == nil:
-		// found, fall through below
+		// Found: the rest of the work happens off the request path (see
+		// forgotPasswordAsync) so the synchronous cost here matches the
+		// not-found branch exactly — one lookup, then return.
+		s.forgotPasswordAsync(ctx, userID)
 	case errors.Is(err, repo.ErrNotFound):
-		// Unknown login: identical nil return, no pending object, no email,
-		// no cooldown/quota touched.
-		return nil
+		// Unknown login: identical nil return, no further work at all.
 	default:
 		return err
 	}
 
-	// Resolve the account's email (need it whether login was already an email
-	// or a username) — the pending-reset object and the send are always keyed
-	// by email (ADR-3), same as registration.
-	user, err := s.repo.GetByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if user == nil {
-		// Resolved an ID that vanished between the two reads. Same
-		// anti-enumeration nil return as "not found" above.
-		return nil
-	}
-	email := normalizeEmail(user.Email)
-
-	allowed, err := s.authStore.CheckAndSetMailCooldown(ctx, email, s.cfg.EmailResendCooldown)
-	if err != nil {
-		return err
-	}
-	if !allowed {
-		return nil
-	}
-	sent, err := s.authStore.IncrementMailQuota(ctx, email, time.Hour)
-	if err != nil {
-		return err
-	}
-	if sent > s.cfg.EmailSendQuotaPerHour {
-		return nil
-	}
-
-	code, err := generateCode()
-	if err != nil {
-		return err
-	}
-
-	pending := cache.PendingReg{CodeHash: hashCode(code)}
-	if err := s.authStore.SavePendingReset(ctx, email, pending, s.cfg.EmailCodeTTL); err != nil {
-		return err
-	}
-
-	// Personalization only ("Hi %s,") — not security-relevant, so a generic
-	// greeting is used rather than adding a Profile-lookup dependency this
-	// service doesn't otherwise need.
-	subject, body := mail.PasswordReset("there", code)
-	s.sendMailAsync(ctx, email, subject, body)
-
 	return nil
+}
+
+// forgotPasswordAsync does the found-account work for ForgotPassword off the
+// request goroutine: resolves the account's email, applies the reset-flow
+// cooldown/quota, generates and saves the reset code, and sends the email.
+// Every failure here is logged and simply abandons the background job — by
+// the time this runs the HTTP response has already been sent (always nil/
+// 202), so there is nothing left to propagate an error to, and no reason to
+// make the caller wait on any of it.
+func (s *AuthService) forgotPasswordAsync(ctx context.Context, userID int64) {
+	bgCtx := context.WithoutCancel(ctx)
+	log := s.log
+
+	safego.Go(log, func() {
+		user, err := s.repo.GetByID(bgCtx, userID)
+		if err != nil {
+			log.Error("forgot-password: loading user", slog.String("err", err.Error()))
+			return
+		}
+		if user == nil {
+			// Resolved an ID that vanished between the lookup and here.
+			return
+		}
+		email := normalizeEmail(user.Email)
+		if email == "" {
+			// Telegram-only account with no email on file (findOrCreateUser
+			// creates these with Email: "") — nothing to send to. Silent
+			// no-op: the HTTP response was already a plain 202 either way,
+			// so this can't leak anything, and touching a shared "" key
+			// across every emailless user would be its own bug.
+			return
+		}
+
+		if !s.checkResetMailCooldown(bgCtx, email) {
+			return
+		}
+		if !s.reserveResetMailQuota(bgCtx, email) {
+			return
+		}
+
+		code, err := generateCode()
+		if err != nil {
+			log.Error("forgot-password: generating code", slog.String("err", err.Error()))
+			return
+		}
+
+		pending := cache.PendingReg{CodeHash: hashCode(code)}
+		if err := s.authStore.SavePendingReset(bgCtx, email, pending, s.cfg.EmailCodeTTL); err != nil {
+			log.Error("forgot-password: saving pending reset", slog.String("err", err.Error()))
+			return
+		}
+
+		// Personalization only ("Hi %s,") — not security-relevant, so a
+		// generic greeting is used rather than adding a Profile-lookup
+		// dependency this service doesn't otherwise need.
+		subject, body := mail.PasswordReset("there", code)
+		s.sendMailAsync(bgCtx, email, subject, body)
+	})
+}
+
+// checkResetMailCooldown is the reset-flow's anti-double-send cooldown
+// check, keyed separately from Register/ResendCode's cache.MailCooldownKey
+// (Critical #1). Fail-open on a Redis error (logs, returns true/"allowed"):
+// this call already runs off the request path, so a Redis hiccup here can
+// only cost at most one duplicate email, never a wrong HTTP response.
+func (s *AuthService) checkResetMailCooldown(ctx context.Context, email string) bool {
+	allowed, err := s.authStore.CheckAndSetMailResetCooldown(ctx, email, s.cfg.EmailResendCooldown)
+	if err != nil {
+		s.log.Error("checking reset mail cooldown", slog.String("err", err.Error()))
+		return true
+	}
+	return allowed
+}
+
+// reserveResetMailQuota is reserveMailQuota's counterpart for the
+// password-reset flow, using the separate cache.MailResetQuotaKey namespace
+// (Critical #1) instead of Register/ResendCode's cache.MailQuotaKey. Same
+// fail-open reasoning as reserveMailQuota.
+func (s *AuthService) reserveResetMailQuota(ctx context.Context, email string) bool {
+	sent, err := s.authStore.IncrementMailResetQuota(ctx, email, time.Hour)
+	if err != nil {
+		s.log.Error("incrementing reset mail quota", slog.String("err", err.Error()))
+		return true
+	}
+	return sent <= s.cfg.EmailSendQuotaPerHour
 }
 
 // dropPendingReset invalidates a pending password reset, logging (not

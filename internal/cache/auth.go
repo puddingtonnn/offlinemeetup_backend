@@ -245,3 +245,31 @@ func (s *RedisAuthStore) IncrementMailQuota(ctx context.Context, email string, w
 	}
 	return res, nil
 }
+
+// --- password-reset mail cooldown / hourly quota ---------------------------
+//
+// Separate key namespace from CheckAndSetMailCooldown/IncrementMailQuota
+// above (MailResetCooldownKey/MailResetQuotaKey vs MailCooldownKey/
+// MailQuotaKey): ForgotPassword only claims these on the found-account path,
+// and sharing a namespace with ResendCode (which reports a hit as a visible
+// 429) would let two calls on the same email deterministically reveal
+// whether the account exists. See task-6 report, Critical #1.
+
+// CheckAndSetMailResetCooldown is CheckAndSetMailCooldown for the
+// password-reset flow.
+func (s *RedisAuthStore) CheckAndSetMailResetCooldown(ctx context.Context, email string, cooldown time.Duration) (bool, error) {
+	res, err := cooldownScript.Run(ctx, s.rdb, []string{MailResetCooldownKey(email)}, cooldown.Milliseconds()).Int()
+	if err != nil {
+		return false, fmt.Errorf("auth store: checking reset mail cooldown: %w", err)
+	}
+	return res == 1, nil
+}
+
+// IncrementMailResetQuota is IncrementMailQuota for the password-reset flow.
+func (s *RedisAuthStore) IncrementMailResetQuota(ctx context.Context, email string, window time.Duration) (int, error) {
+	res, err := incrementLoginFailScript.Run(ctx, s.rdb, []string{MailResetQuotaKey(email)}, window.Milliseconds()).Int()
+	if err != nil {
+		return 0, fmt.Errorf("auth store: incrementing reset mail quota: %w", err)
+	}
+	return res, nil
+}
