@@ -788,9 +788,10 @@ func TestAuthService_ResetPassword_NoPendingIs400(t *testing.T) {
 }
 
 // Mirrors TestAuthService_VerifyEmail_WrongCodeExhaustsAttempts: the reset
-// flow's attempt counter (IncrementPendingResetAttempts) must burn out the
-// same way VerifyEmail's does, dropping the pending object once
-// EmailCodeMaxAttempts is reached.
+// flow's attempt counter (fix round 2: cache.ResetAttemptsKey via
+// IncrementResetAttempts, NOT the old pending-object-scoped
+// IncrementPendingResetAttempts) must burn out the same way VerifyEmail's
+// does, dropping the pending object once EmailCodeMaxAttempts is reached.
 func TestAuthService_ResetPassword_WrongCodeExhaustsAttempts(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
@@ -801,15 +802,17 @@ func TestAuthService_ResetPassword_WrongCodeExhaustsAttempts(t *testing.T) {
 		wrong = "111111"
 	}
 
-	// EmailCodeMaxAttempts is 3 in the fixture: two wrong codes are plain 400s.
+	// EmailCodeMaxAttempts is 3 in the fixture: two wrong codes are plain
+	// 400s, and the pending object survives them (only the SEPARATE
+	// attempt counter is what tracks progress toward the threshold now —
+	// see fix round 2's rejectResetAttempt).
 	for i := 0; i < f.cfg.EmailCodeMaxAttempts-1; i++ {
 		err := f.svc.ResetPassword(ctx, testEmail, wrong, "a brand new password")
 		assert.ErrorIs(t, err, ErrInvalidInput, "attempt %d", i+1)
 
-		pending, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)
+		_, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)
 		require.NoError(t, storeErr)
 		require.True(t, found, "pending survives a merely-wrong code")
-		assert.Equal(t, i+1, pending.Attempts)
 	}
 
 	// The last one burns the allowance: 429 and the pending object is gone.
@@ -825,6 +828,84 @@ func TestAuthService_ResetPassword_WrongCodeExhaustsAttempts(t *testing.T) {
 	// Even the RIGHT code no longer works — the reset must be restarted.
 	err = f.svc.ResetPassword(ctx, testEmail, code, "a brand new password")
 	assert.ErrorIs(t, err, ErrInvalidInput)
+}
+
+// Fix round 2, Critical: a NONEXISTENT email (no PendingReset ever saved for
+// it — no forgot-password call, or the account doesn't exist) must reach
+// the exact same 429 on the exact same call count as a real account maxing
+// out its attempts, via the shared cache.ResetAttemptsKey counter. Before
+// this fix, "no pending object" short-circuited to a permanent 400 that
+// never became 429 — a deterministic account-existence oracle when combined
+// with ForgotPassword's always-202 contract.
+func TestAuthService_ResetPassword_NonexistentEmail_EventuallyRateLimited(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+	const strangerEmail = "stranger@example.com"
+
+	// No repo/credRepo/refresh/store-seeding at all: this email has no
+	// account and no pending reset was ever created for it.
+	for i := 0; i < f.cfg.EmailCodeMaxAttempts-1; i++ {
+		err := f.svc.ResetPassword(ctx, strangerEmail, "000000", "a brand new password")
+		assert.ErrorIs(t, err, ErrInvalidInput, "attempt %d", i+1)
+	}
+
+	err := f.svc.ResetPassword(ctx, strangerEmail, "000000", "a brand new password")
+	assert.ErrorIs(t, err, ErrTooManyRequests,
+		"a nonexistent email must ALSO eventually hit 429, on the same call count a real account would")
+}
+
+// Fix round 2: the two sequences — a real account maxing out attempts vs. a
+// nonexistent account "maxing out" the same shared counter — must produce
+// BYTE-IDENTICAL error sequences over EmailCodeMaxAttempts calls. This is
+// the property that actually closes the oracle (not just "both eventually
+// 429", but "indistinguishable at every step").
+func TestAuthService_ResetPassword_RealAndFakeAccountsProduceIdenticalErrorSequence(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	code := seedPendingReset(t, f)
+	wrong := "000000"
+	if wrong == code {
+		wrong = "111111"
+	}
+
+	var realSeq, fakeSeq []error
+	for i := 0; i < f.cfg.EmailCodeMaxAttempts; i++ {
+		realSeq = append(realSeq, f.svc.ResetPassword(ctx, testEmail, wrong, "a brand new password"))
+	}
+
+	const strangerEmail = "nobody-here@example.com"
+	for i := 0; i < f.cfg.EmailCodeMaxAttempts; i++ {
+		fakeSeq = append(fakeSeq, f.svc.ResetPassword(ctx, strangerEmail, wrong, "a brand new password"))
+	}
+
+	require.Len(t, realSeq, f.cfg.EmailCodeMaxAttempts)
+	require.Len(t, fakeSeq, f.cfg.EmailCodeMaxAttempts)
+	for i := range realSeq {
+		assert.Equalf(t, sentinelKind(realSeq[i]), sentinelKind(fakeSeq[i]),
+			"call %d: real account gave %v, fake account gave %v — must match", i, realSeq[i], fakeSeq[i])
+	}
+	// The last call in particular must be the 429 for both.
+	assert.ErrorIs(t, realSeq[len(realSeq)-1], ErrTooManyRequests)
+	assert.ErrorIs(t, fakeSeq[len(fakeSeq)-1], ErrTooManyRequests)
+}
+
+// sentinelKind is a tiny test-only helper so the identical-sequence
+// assertion above compares by SENTINEL (ErrInvalidInput vs
+// ErrTooManyRequests), which is what the caller-visible HTTP status code
+// actually maps from, rather than by exact error string (which legitimately
+// differs in wrapped text between paths).
+func sentinelKind(err error) string {
+	switch {
+	case err == nil:
+		return "nil"
+	case errors.Is(err, ErrTooManyRequests):
+		return "429"
+	case errors.Is(err, ErrInvalidInput):
+		return "400"
+	default:
+		return "other"
+	}
 }
 
 // --- ChangePassword ------------------------------------------------------

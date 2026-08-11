@@ -30,6 +30,16 @@ const (
 	// reveal whether the account exists. See task-6 report, Critical #1.
 	mailResetCooldownPrefix = "auth:mail_reset_cooldown:"
 	mailResetQuotaPrefix    = "auth:mail_reset_quota:"
+
+	// resetAttemptsPrefix backs an UNCONDITIONAL wrong-code counter for
+	// ResetPassword, keyed by email regardless of whether a real
+	// PendingReset object exists for it (same idea as loginFailPrefix — a
+	// counter that doesn't require a real account to exist). Without this,
+	// a nonexistent email always got 400 forever while a real account
+	// eventually hit 429 on a predictable call count — a second
+	// account-enumeration oracle, this time via forgot-password +
+	// reset-password. See task-6 report, fix round 2.
+	resetAttemptsPrefix = "auth:reset_attempts:"
 )
 
 // UserChatsKey возвращает ключ со списком чатов пользователя.
@@ -106,4 +116,11 @@ func MailResetCooldownKey(email string) string {
 // MailResetCooldownKey).
 func MailResetQuotaKey(email string) string {
 	return mailResetQuotaPrefix + strings.ToLower(strings.TrimSpace(email))
+}
+
+// ResetAttemptsKey — ключ счётчика неверных кодов сброса пароля для email,
+// СУЩЕСТВУЮЩИЙ НЕЗАВИСИМО от того, есть ли реальный PendingReset для этого
+// email (см. комментарий у resetAttemptsPrefix).
+func ResetAttemptsKey(email string) string {
+	return resetAttemptsPrefix + strings.ToLower(strings.TrimSpace(email))
 }

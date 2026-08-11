@@ -275,19 +275,19 @@ func (mr *MockAuthStoreMockRecorder) IncrementPendingRegAttempts(ctx, email any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementPendingRegAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementPendingRegAttempts), ctx, email)
 }
 
-// IncrementPendingResetAttempts mocks base method.
-func (m *MockAuthStore) IncrementPendingResetAttempts(ctx context.Context, email string) (int, error) {
+// IncrementResetAttempts mocks base method.
+func (m *MockAuthStore) IncrementResetAttempts(ctx context.Context, email string, window time.Duration) (int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IncrementPendingResetAttempts", ctx, email)
+	ret := m.ctrl.Call(m, "IncrementResetAttempts", ctx, email, window)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// IncrementPendingResetAttempts indicates an expected call of IncrementPendingResetAttempts.
-func (mr *MockAuthStoreMockRecorder) IncrementPendingResetAttempts(ctx, email any) *gomock.Call {
+// IncrementResetAttempts indicates an expected call of IncrementResetAttempts.
+func (mr *MockAuthStoreMockRecorder) IncrementResetAttempts(ctx, email, window any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementPendingResetAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementPendingResetAttempts), ctx, email)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementResetAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementResetAttempts), ctx, email, window)
 }
 
 // ResetLoginFail mocks base method.
@@ -302,6 +302,20 @@ func (m *MockAuthStore) ResetLoginFail(ctx context.Context, login string) error 
 func (mr *MockAuthStoreMockRecorder) ResetLoginFail(ctx, login any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetLoginFail", reflect.TypeOf((*MockAuthStore)(nil).ResetLoginFail), ctx, login)
+}
+
+// ResetResetAttempts mocks base method.
+func (m *MockAuthStore) ResetResetAttempts(ctx context.Context, email string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetResetAttempts", ctx, email)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetResetAttempts indicates an expected call of ResetResetAttempts.
+func (mr *MockAuthStoreMockRecorder) ResetResetAttempts(ctx, email any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetResetAttempts", reflect.TypeOf((*MockAuthStore)(nil).ResetResetAttempts), ctx, email)
 }
 
 // SavePendingReg mocks base method.

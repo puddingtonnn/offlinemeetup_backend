@@ -53,13 +53,20 @@ type AuthStore interface {
 	SavePendingReset(ctx context.Context, email string, data cache.PendingReg, ttl time.Duration) error
 	GetPendingReset(ctx context.Context, email string) (cache.PendingReg, bool, error)
 	DeletePendingReset(ctx context.Context, email string) error
-	IncrementPendingResetAttempts(ctx context.Context, email string) (int, error)
-	// Reset-flow mail cooldown/quota (fix round, Critical #1): a SEPARATE key
-	// namespace from CheckAndSetMailCooldown/IncrementMailQuota above, so
-	// ForgotPassword's conditional (found-only) claim can never be observed
-	// through ResendCode's visible 429 on the same key.
+	// Reset-flow mail cooldown/quota (fix round 1, Critical #1): a SEPARATE
+	// key namespace from CheckAndSetMailCooldown/IncrementMailQuota above,
+	// so ForgotPassword's conditional (found-only) claim can never be
+	// observed through ResendCode's visible 429 on the same key.
 	CheckAndSetMailResetCooldown(ctx context.Context, email string, cooldown time.Duration) (bool, error)
 	IncrementMailResetQuota(ctx context.Context, email string, window time.Duration) (int, error)
+	// Reset-flow wrong-code attempt counter (fix round 2): maintained
+	// UNCONDITIONALLY per email, independent of whether a real
+	// PendingReset object exists — see ResetPassword/rejectResetAttempt.
+	// Replaces IncrementPendingResetAttempts (Task 3), which required a
+	// live pending object and so couldn't give a nonexistent email the
+	// same eventual-429 shape a real account gets.
+	IncrementResetAttempts(ctx context.Context, email string, window time.Duration) (int, error)
+	ResetResetAttempts(ctx context.Context, email string) error
 }
 
 // Mailer sends a plain-text email. Consumer-side declaration of
@@ -540,9 +547,55 @@ func (s *AuthService) dropPendingReset(ctx context.Context, email string) {
 	}
 }
 
+// rejectResetAttempt handles a wrong reset code — or the absence of any
+// pending-reset object at all (unknown email, or nobody ever called
+// forgot-password for it). The two cases are DELIBERATELY handled by the
+// exact same code path here: the wrong-attempt counter
+// (cache.ResetAttemptsKey, via IncrementResetAttempts) is maintained
+// unconditionally per email, whether or not a real PendingReset object
+// backs it — mirroring ADR-13's IncrementLoginFail, a failed-login counter
+// that likewise doesn't require the login to resolve to a real account.
+//
+// Fix round 2: before this, "no pending object" short-circuited straight to
+// a plain 400 without ever touching a counter, so a nonexistent email
+// always got 400 forever while a real account with the same number of
+// wrong guesses eventually got 429 — an account-existence oracle via
+// ResetPassword's own status codes (calling forgot-password then
+// reset-password EmailCodeMaxAttempts times on the same email would reveal
+// whether it existed). Now both cases increment the SAME counter and hit
+// 429 on the SAME call count, and both do exactly one Redis round trip here
+// (IncrementResetAttempts) on top of the one GetPendingReset ResetPassword
+// already did — the real-pending and no-pending cases cost the identical
+// number of round trips, so this doesn't reopen the round-trip-count timing
+// gap Critical #2 closed for ForgotPassword.
+func (s *AuthService) rejectResetAttempt(ctx context.Context, email string) error {
+	attempts, err := s.authStore.IncrementResetAttempts(ctx, email, s.cfg.EmailCodeTTL)
+	if err != nil {
+		return err
+	}
+	if attempts >= s.cfg.EmailCodeMaxAttempts {
+		// Burn the allowance: drop any real pending object (if one exists;
+		// a no-op otherwise) and reset the counter so a subsequent attempt
+		// starts a fresh cycle rather than being permanently stuck at 429 —
+		// symmetric with VerifyEmail's dropPending behavior, and harmless
+		// either way since a dropped pending object makes success
+		// impossible regardless of further guesses.
+		s.dropPendingReset(ctx, email)
+		if err := s.authStore.ResetResetAttempts(ctx, email); err != nil {
+			s.log.Error("resetting exhausted reset-attempt counter", slog.String("err", err.Error()))
+		}
+		return fmt.Errorf("%w: too many invalid codes", ErrTooManyRequests)
+	}
+	return fmt.Errorf("%w: invalid code", ErrInvalidInput)
+}
+
 // ResetPassword completes a forgot-password flow: confirms the emailed code
-// and sets a new password. Same attempt-limiting shape as VerifyEmail (Task
-// 4), reusing IncrementPendingResetAttempts instead of reinventing it.
+// and sets a new password. Same attempt-limiting SHAPE as VerifyEmail (Task
+// 4) — 400 on a wrong code, 429 once attempts are exhausted — but the
+// counter backing it is NOT tied to a real PendingReset object existing
+// (fix round 2, see rejectResetAttempt): a nonexistent email and a real
+// account with the same number of wrong attempts return the identical
+// sequence of errors.
 //
 // This does NOT log the caller in — per the plan's API table, reset-password
 // returns 200 (no AuthTokensResponse), it's a password reset, not a login —
@@ -559,28 +612,18 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, code, newPasswor
 	if err != nil {
 		return err
 	}
-	if !found {
-		return fmt.Errorf("%w: no pending password reset", ErrInvalidInput)
+	if !found || !codeMatches(code, pending.CodeHash) {
+		// Deliberately the SAME path for "no pending object at all" and
+		// "pending object exists but the code is wrong" — see
+		// rejectResetAttempt's doc comment for why.
+		return s.rejectResetAttempt(ctx, email)
 	}
 
-	if pending.Attempts >= s.cfg.EmailCodeMaxAttempts {
-		s.dropPendingReset(ctx, email)
-		return fmt.Errorf("%w: too many invalid codes", ErrTooManyRequests)
-	}
-
-	if !codeMatches(code, pending.CodeHash) {
-		attempts, err := s.authStore.IncrementPendingResetAttempts(ctx, email)
-		if err != nil {
-			if errors.Is(err, cache.ErrPendingNotFound) {
-				return fmt.Errorf("%w: no pending password reset", ErrInvalidInput)
-			}
-			return err
-		}
-		if attempts >= s.cfg.EmailCodeMaxAttempts {
-			s.dropPendingReset(ctx, email)
-			return fmt.Errorf("%w: too many invalid codes", ErrTooManyRequests)
-		}
-		return fmt.Errorf("%w: invalid code", ErrInvalidInput)
+	// Code confirmed: clear the wrong-attempt counter too (mirrors
+	// ResetLoginFail clearing on a successful login) so a confirmed reset
+	// never leaves stale attempt state behind for a later retry.
+	if err := s.authStore.ResetResetAttempts(ctx, email); err != nil {
+		s.log.Error("clearing reset-attempt counter", slog.String("err", err.Error()))
 	}
 
 	// Re-resolve the account fresh at confirm time (same reasoning as

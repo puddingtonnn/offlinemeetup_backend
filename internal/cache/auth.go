@@ -273,3 +273,39 @@ func (s *RedisAuthStore) IncrementMailResetQuota(ctx context.Context, email stri
 	}
 	return res, nil
 }
+
+// --- ResetPassword wrong-code attempt counter -------------------------------
+//
+// Same INCR+PEXPIRE-on-first-increment pattern as IncrementLoginFail
+// (ADR-13), reused here for the same reason: the counter must exist and be
+// incremented UNCONDITIONALLY, regardless of whether a real PendingReset
+// object backs `email`. If this only counted attempts against a real
+// pending object (as IncrementPendingResetAttempts alone did), a
+// nonexistent email would always get 400 forever while a real one
+// eventually hit 429 — an account-existence oracle via ResetPassword's own
+// status codes. See task-6 report, fix round 2.
+
+// IncrementResetAttempts atomically increments the wrong-code counter for a
+// password-reset attempt on email and returns the new count. Unlike
+// IncrementPendingResetAttempts (which requires a live pending object and
+// preserves ITS remaining TTL), this is a plain sliding-window counter that
+// exists independently — window is set on the FIRST increment only, same
+// as IncrementLoginFail, so it doesn't require any other Redis object to
+// exist first.
+func (s *RedisAuthStore) IncrementResetAttempts(ctx context.Context, email string, window time.Duration) (int, error) {
+	res, err := incrementLoginFailScript.Run(ctx, s.rdb, []string{ResetAttemptsKey(email)}, window.Milliseconds()).Int()
+	if err != nil {
+		return 0, fmt.Errorf("auth store: incrementing reset attempt counter: %w", err)
+	}
+	return res, nil
+}
+
+// ResetResetAttempts clears the wrong-code counter (called once a reset
+// succeeds, or once the counter is exhausted and the caller must start
+// over). Deleting a missing key is a no-op, not an error.
+func (s *RedisAuthStore) ResetResetAttempts(ctx context.Context, email string) error {
+	if err := s.rdb.Del(ctx, ResetAttemptsKey(email)).Err(); err != nil {
+		return fmt.Errorf("auth store: resetting reset attempt counter: %w", err)
+	}
+	return nil
+}
