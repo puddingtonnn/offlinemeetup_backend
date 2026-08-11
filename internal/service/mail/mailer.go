@@ -1,11 +1,8 @@
 // Package mail provides the outbound-email seam used by the email/password
 // auth flows (registration verification, password-attach-to-existing-account,
 // password reset). It defines the Mailer interface, a logMailer stub for
-// local/dev, and the plain-text templates used by those flows.
-//
-// The real SMTP-relay implementation (github.com/wneessen/go-mail) lands in a
-// later task; it will implement the same Mailer interface, so callers built
-// against this interface today do not change when it arrives.
+// local/dev, an smtpMailer relay implementation (github.com/wneessen/go-mail)
+// for everywhere else, and the plain-text templates used by those flows.
 package mail
 
 import "context"

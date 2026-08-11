@@ -131,7 +131,7 @@ func setupAuthPasswordTest(t *testing.T) *authPwdFixture {
 		EmailSendQuotaPerHour: 5,
 	}
 
-	svc := NewAuthService(authRepo, pwdRepo, credRepo, refreshRepo, store, mailer, cfg, log)
+	svc := NewAuthService(authRepo, pwdRepo, credRepo, refreshRepo, store, mailer, nil, cfg, log)
 
 	return &authPwdFixture{
 		mr:       mr,
@@ -183,6 +183,56 @@ func TestAuthService_Register_FreeEmail(t *testing.T) {
 	// Only the hash is stored; the plaintext code never touches Redis.
 	assert.NotContains(t, pending.CodeHash, code)
 	assert.Equal(t, hashCode(code), pending.CodeHash)
+}
+
+// failingMailer always errors, to exercise sendMailAsync's mail.Metrics
+// increment on a Mailer.Send failure.
+type failingMailer struct{}
+
+func (failingMailer) Send(context.Context, string, string, string) error {
+	return errors.New("smtp: connection refused")
+}
+
+// countingMailMetrics is a mail.Metrics test double that signals over a
+// channel (not a polled counter) so the test gets a happens-before edge with
+// the background send goroutine under -race.
+type countingMailMetrics struct {
+	ch chan struct{}
+}
+
+func newCountingMailMetrics() *countingMailMetrics {
+	return &countingMailMetrics{ch: make(chan struct{}, 16)}
+}
+
+func (m *countingMailMetrics) SendFailure() { m.ch <- struct{}{} }
+
+func (m *countingMailMetrics) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case <-m.ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected mail send failure metric to be incremented, none arrived")
+	}
+}
+
+// TestSendMailAsync_IncrementsFailureMetricOnSendError confirms the
+// background mail-send goroutine (ADR-11) increments mail.Metrics.SendFailure
+// when Mailer.Send returns an error — the signal ADR-11's silent-by-default
+// backgrounding relies on for ops visibility (see task-7 brief).
+func TestSendMailAsync_IncrementsFailureMetricOnSendError(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	metrics := newCountingMailMetrics()
+	f.svc.mailer = failingMailer{}
+	f.svc.mailMetrics = metrics
+
+	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(0), repo.ErrNotFound)
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
+
+	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
+
+	metrics.wait(t)
 }
 
 func TestAuthService_Register_ExistingEmailIsIndistinguishable(t *testing.T) {

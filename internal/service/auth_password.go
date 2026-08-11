@@ -716,12 +716,14 @@ func (s *AuthService) sendMailAsync(ctx context.Context, to, subject, body strin
 	sendCtx := context.WithoutCancel(ctx)
 	log := s.log
 	mailer := s.mailer
+	metrics := s.mailMetrics
 	timeout := s.cfg.MailSendTimeout
 
 	safego.Go(log, func() {
 		ctx, cancel := context.WithTimeout(sendCtx, timeout)
 		defer cancel()
 		if err := mailer.Send(ctx, to, subject, body); err != nil {
+			metrics.SendFailure()
 			log.Error("sending auth email",
 				slog.String("to", to),
 				slog.String("err", err.Error()))

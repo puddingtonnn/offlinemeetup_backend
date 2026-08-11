@@ -20,6 +20,7 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/service/mail"
 	"google.golang.org/api/idtoken"
 )
 
@@ -58,6 +59,7 @@ type AuthService struct {
 	credentialsRepo CredentialsRepository
 	authStore       AuthStore
 	mailer          Mailer
+	mailMetrics     mail.Metrics
 	log             *slog.Logger
 }
 
@@ -68,9 +70,13 @@ func NewAuthService(
 	refreshRepo RefreshTokenRepository,
 	authStore AuthStore,
 	mailer Mailer,
+	mailMetrics mail.Metrics,
 	cfg *config.Config,
 	log *slog.Logger,
 ) *AuthService {
+	if mailMetrics == nil {
+		mailMetrics = mail.NopMetrics
+	}
 	return &AuthService{
 		repo:            repo,
 		refreshRepo:     refreshRepo,
@@ -79,6 +85,7 @@ func NewAuthService(
 		credentialsRepo: credentialsRepo,
 		authStore:       authStore,
 		mailer:          mailer,
+		mailMetrics:     mailMetrics,
 		log:             log,
 	}
 }

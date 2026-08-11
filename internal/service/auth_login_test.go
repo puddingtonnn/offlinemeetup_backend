@@ -53,7 +53,7 @@ func setupAuthLoginTest(t *testing.T) *authLoginFixture {
 		LoginFailWindow: 15 * time.Minute,
 	}
 
-	svc := NewAuthService(nil, pwdRepo, credRepo, refreshRepo, store, nil, cfg, log)
+	svc := NewAuthService(nil, pwdRepo, credRepo, refreshRepo, store, nil, nil, cfg, log)
 
 	return &authLoginFixture{
 		mr:       mr,

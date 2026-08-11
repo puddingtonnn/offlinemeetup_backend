@@ -20,6 +20,7 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service/mail"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/service/mail/mailmetrics"
 	transport "github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/http/handler"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/transport/websocket"
@@ -58,6 +59,7 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 
 	metricsReg := prometheus.NewRegistry()
 	cacheMetrics := cachemetrics.New(metricsReg)
+	mailMetrics := mailmetrics.New(metricsReg)
 	metricsHandler := promhttp.HandlerFor(metricsReg, promhttp.HandlerOpts{})
 
 	cached := cache.NewTimeoutCache(cache.NewRedisCache(rdb, log), cfg.CacheTimeout)
@@ -90,12 +92,26 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	refreshRepo := repo.NewRefreshTokenRepo(db)
 	credentialsRepo := repo.NewCredentialsRepo(db)
 
-	// logMailer unconditionally for now — Task 7 branches local/dev (logMailer)
-	// vs prod (smtpMailer, github.com/wneessen/go-mail) once smtpMailer exists.
-	mailer := mail.NewLogMailer(log)
+	// local/dev use logMailer (logs the code instead of sending, see
+	// mail.NewLogMailer doc); everywhere else uses the real SMTP relay.
+	// Mirrors the APP_ENV gating used for dev-login/swagger in router.go.
+	// config.Load already fails fast outside local/dev if the MAIL_SMTP_*
+	// secrets are empty, so smtpMailer's own error path here is only
+	// reachable on a malformed (non-empty) value, e.g. a non-numeric port.
+	var mailer mail.Mailer
+	if cfg.Env == "local" || cfg.Env == "dev" {
+		mailer = mail.NewLogMailer(log)
+	} else {
+		smtpMailer, err := mail.NewSMTPMailer(cfg.MailSMTPHost, cfg.MailSMTPPort, cfg.MailSMTPUser, cfg.MailSMTPPassword, cfg.MailFrom)
+		if err != nil {
+			log.Error("failed to build smtp mailer", slog.String("error", err.Error()))
+			panic(fmt.Errorf("failed to build smtp mailer: %w", err))
+		}
+		mailer = smtpMailer
+	}
 	authStore := cache.NewRedisAuthStore(rdb, log)
 
-	authService := service.NewAuthService(userRepo, userRepo, credentialsRepo, refreshRepo, authStore, mailer, cfg, log)
+	authService := service.NewAuthService(userRepo, userRepo, credentialsRepo, refreshRepo, authStore, mailer, mailMetrics, cfg, log)
 	profileCache := cache.NewProfileCache(cached, cacheMetrics, cfg.CacheTTLProfile)
 	profileService := service.NewProfileService(profileRepo, userRepo, profileCache, cfg.S3PublicURL)
 	meetupCache := cache.NewMeetupCache(cached, cacheMetrics, cfg.CacheTTLMeetup)
