@@ -330,7 +330,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 // ChangePassword
 // @Summary      Сменить пароль
-// @Description  Меняет пароль текущего аккаунта. Если у аккаунта ещё нет пароля (вход был только через Google/Telegram), current_password не проверяется. Все refresh-токены пользователя отзываются.
+// @Description  Меняет пароль текущего аккаунта. Если у аккаунта ещё нет пароля (вход был только через Google/Telegram), current_password не проверяется. Все refresh-токены пользователя отзываются, включая тот, которым выполнен этот запрос — клиент должен быть готов заново выполнить вход (или получить 401 при следующем refresh).
 // @Tags         Auth
 // @Security     BearerAuth
 // @Accept       json

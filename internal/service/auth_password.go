@@ -139,6 +139,19 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 		return err
 	}
 
+	// The hourly quota is checked BEFORE anything touches the pending
+	// registration object. SavePendingReg unconditionally overwrites any
+	// existing pending registration for this email (ADR-8) — if the quota
+	// check ran after that save, ANY request to /register for a victim's
+	// email would destroy their in-flight code before the quota silently
+	// suppressed the attacker's own send, a free repeatable way to deny a
+	// victim's registration. Checking first means an exhausted quota leaves
+	// an existing pending registration completely untouched.
+	if !s.reserveMailQuota(ctx, email) {
+		s.log.Warn("registration email suppressed by hourly quota", slog.String("email", email))
+		return nil
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
 		return fmt.Errorf("hashing password: %w", err)
@@ -168,15 +181,6 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 	}
 	if err := s.authStore.SavePendingReg(ctx, email, pending, s.cfg.EmailCodeTTL); err != nil {
 		return err
-	}
-
-	// The hourly quota is enforced here too, not just on resend: otherwise
-	// repeating `register` is a free way to flood a stranger's inbox. Over
-	// quota we skip the send but still return success — same response shape,
-	// no new status code (the plan's API table has no 429 on register).
-	if !s.reserveMailQuota(ctx, email) {
-		s.log.Warn("registration email suppressed by hourly quota", slog.String("email", email))
-		return nil
 	}
 
 	var subject, body string

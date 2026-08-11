@@ -3,6 +3,24 @@
 
 -- 1. case-insensitive email uniqueness
 UPDATE users SET email = lower(trim(email)) WHERE email IS NOT NULL;
+
+-- Pre-flight guard: without this, two existing users whose emails differ only
+-- by case would make the CREATE UNIQUE INDEX below fail with a bare
+-- duplicate-key error, crash-looping the app at boot (goose.Up runs on every
+-- startup). Fail with a clear, actionable message instead.
+DO $$
+DECLARE
+    dup_count integer;
+BEGIN
+    SELECT count(*) INTO dup_count FROM (
+        SELECT lower(email) FROM users WHERE email IS NOT NULL
+        GROUP BY lower(email) HAVING count(*) > 1
+    ) dups;
+    IF dup_count > 0 THEN
+        RAISE EXCEPTION 'Migration blocked: % email address(es) in users differ only by case and would collide under case-insensitive uniqueness. Resolve manually before this migration can proceed (see plan Verification section for the diagnostic query).', dup_count;
+    END IF;
+END $$;
+
 CREATE UNIQUE INDEX uq_users_email_lower ON users (lower(email)) WHERE email IS NOT NULL;
 
 -- 2. split nickname → username + display_name (ADR-4, ADR-5).
@@ -30,8 +48,20 @@ CREATE TABLE user_credentials (
 DROP TABLE IF EXISTS user_credentials;
 
 DROP INDEX IF EXISTS uq_profile_username_lower;
-ALTER TABLE profile ADD CONSTRAINT profile_nickname_key UNIQUE (username);
+
+-- Best-effort data restoration: display_name was never unique (users can
+-- share the same display name), so this UPDATE runs before the UNIQUE
+-- constraint is re-added — restoring as many original nicknames as possible
+-- without a constraint blocking rows that happen to collide.
 UPDATE profile SET username = display_name WHERE display_name IS NOT NULL;
+
+-- This can fail with a duplicate-key error if the restoration above left two
+-- or more rows sharing the same value (distinct users who had set the same
+-- display_name). That is an accepted, documented data-loss risk of rolling
+-- back this migration once real data has diverged — not a bug to work
+-- around further; resolve any duplicates manually before rollback if needed.
+ALTER TABLE profile ADD CONSTRAINT profile_nickname_key UNIQUE (username);
+
 ALTER TABLE profile DROP COLUMN display_name;
 ALTER TABLE profile RENAME COLUMN username TO nickname;
 

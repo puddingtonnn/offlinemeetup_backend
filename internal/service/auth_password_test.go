@@ -321,7 +321,9 @@ func TestAuthService_Register_OverQuotaSucceedsWithoutSending(t *testing.T) {
 	exhaustMailQuota(t, f, testNormEmail)
 
 	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(0), repo.ErrNotFound)
-	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
+	// The quota check happens before SavePendingReg (fix: no free
+	// registration-denial), so an over-quota call never reaches FindIDByEmail
+	// — no FindIDByEmail expectation here would fail the gomock controller.
 
 	// Over the hourly quota the send is suppressed, but the response shape must
 	// not change (the API table has no 429 on register, and a different answer
@@ -329,11 +331,53 @@ func TestAuthService_Register_OverQuotaSucceedsWithoutSending(t *testing.T) {
 	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
 	f.mailer.assertNoMail(t)
 
-	// The pending object is still written — a resend (once the hour rolls over)
-	// can revive the registration without starting from scratch.
+	// No pending object is written when the quota is exhausted: SavePendingReg
+	// unconditionally overwrites any existing pending registration for the
+	// email, so calling it here — even to no visible effect for THIS caller —
+	// would let anyone repeatedly nuke a victim's in-flight registration by
+	// burning the shared quota first.
 	_, found, err := f.store.GetPendingReg(ctx, testNormEmail)
 	require.NoError(t, err)
-	assert.True(t, found)
+	assert.False(t, found)
+}
+
+// TestAuthService_Register_OverQuotaDoesNotClobberExistingPending is the
+// direct regression test for the fix: once the hourly quota is exhausted,
+// Register must NOT overwrite an already-pending registration for the same
+// email. Before the fix, SavePendingReg ran unconditionally before the quota
+// check, so any request — even one that would itself be quota-suppressed —
+// destroyed a victim's in-flight code, a free repeatable registration-denial
+// attack.
+func TestAuthService_Register_OverQuotaDoesNotClobberExistingPending(t *testing.T) {
+	f := setupAuthPasswordTest(t)
+	ctx := context.Background()
+
+	// A legitimate pending registration already exists for this email...
+	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(0), repo.ErrNotFound)
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
+	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
+	original, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	require.NoError(t, err)
+	require.True(t, found)
+	f.mailer.wait(t)
+
+	// ...then the quota gets exhausted (e.g. by an attacker's own repeated
+	// register/resend calls against the same email).
+	exhaustMailQuota(t, f, testNormEmail)
+
+	// An attacker's follow-up register call for the same email, with a
+	// different username/password, must not touch the victim's pending
+	// registration.
+	f.repo.EXPECT().FindIDByUsername(ctx, "attacker").Return(int64(0), repo.ErrNotFound)
+	require.NoError(t, f.svc.Register(ctx, testEmail, "attacker", "some other password"))
+	f.mailer.assertNoMail(t)
+
+	after, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	require.NoError(t, err)
+	require.True(t, found, "the victim's pending registration must survive")
+	assert.Equal(t, original.Username, after.Username)
+	assert.Equal(t, original.CodeHash, after.CodeHash)
+	assert.Equal(t, original.PasswordHash, after.PasswordHash)
 }
 
 // --- VerifyEmail -----------------------------------------------------------
