@@ -25,4 +25,3 @@ func TestLogMailer_Send_LogsRecipientSubjectAndBody(t *testing.T) {
 		}
 	}
 }
-

@@ -156,17 +156,17 @@ func (mr *MockAuthStoreMockRecorder) CheckAndSetMailResetCooldown(ctx, email, co
 }
 
 // DeletePendingReg mocks base method.
-func (m *MockAuthStore) DeletePendingReg(ctx context.Context, email string) error {
+func (m *MockAuthStore) DeletePendingReg(ctx context.Context, email, regID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeletePendingReg", ctx, email)
+	ret := m.ctrl.Call(m, "DeletePendingReg", ctx, email, regID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeletePendingReg indicates an expected call of DeletePendingReg.
-func (mr *MockAuthStoreMockRecorder) DeletePendingReg(ctx, email any) *gomock.Call {
+func (mr *MockAuthStoreMockRecorder) DeletePendingReg(ctx, email, regID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePendingReg", reflect.TypeOf((*MockAuthStore)(nil).DeletePendingReg), ctx, email)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePendingReg", reflect.TypeOf((*MockAuthStore)(nil).DeletePendingReg), ctx, email, regID)
 }
 
 // DeletePendingReset mocks base method.
@@ -184,9 +184,9 @@ func (mr *MockAuthStoreMockRecorder) DeletePendingReset(ctx, email any) *gomock.
 }
 
 // GetPendingReg mocks base method.
-func (m *MockAuthStore) GetPendingReg(ctx context.Context, email string) (cache.PendingReg, bool, error) {
+func (m *MockAuthStore) GetPendingReg(ctx context.Context, email, regID string) (cache.PendingReg, bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPendingReg", ctx, email)
+	ret := m.ctrl.Call(m, "GetPendingReg", ctx, email, regID)
 	ret0, _ := ret[0].(cache.PendingReg)
 	ret1, _ := ret[1].(bool)
 	ret2, _ := ret[2].(error)
@@ -194,9 +194,9 @@ func (m *MockAuthStore) GetPendingReg(ctx context.Context, email string) (cache.
 }
 
 // GetPendingReg indicates an expected call of GetPendingReg.
-func (mr *MockAuthStoreMockRecorder) GetPendingReg(ctx, email any) *gomock.Call {
+func (mr *MockAuthStoreMockRecorder) GetPendingReg(ctx, email, regID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPendingReg", reflect.TypeOf((*MockAuthStore)(nil).GetPendingReg), ctx, email)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPendingReg", reflect.TypeOf((*MockAuthStore)(nil).GetPendingReg), ctx, email, regID)
 }
 
 // GetPendingReset mocks base method.
@@ -261,18 +261,18 @@ func (mr *MockAuthStoreMockRecorder) IncrementMailResetQuota(ctx, email, window 
 }
 
 // IncrementPendingRegAttempts mocks base method.
-func (m *MockAuthStore) IncrementPendingRegAttempts(ctx context.Context, email string) (int, error) {
+func (m *MockAuthStore) IncrementPendingRegAttempts(ctx context.Context, email, regID string) (int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IncrementPendingRegAttempts", ctx, email)
+	ret := m.ctrl.Call(m, "IncrementPendingRegAttempts", ctx, email, regID)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // IncrementPendingRegAttempts indicates an expected call of IncrementPendingRegAttempts.
-func (mr *MockAuthStoreMockRecorder) IncrementPendingRegAttempts(ctx, email any) *gomock.Call {
+func (mr *MockAuthStoreMockRecorder) IncrementPendingRegAttempts(ctx, email, regID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementPendingRegAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementPendingRegAttempts), ctx, email)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementPendingRegAttempts", reflect.TypeOf((*MockAuthStore)(nil).IncrementPendingRegAttempts), ctx, email, regID)
 }
 
 // IncrementResetAttempts mocks base method.
@@ -319,17 +319,17 @@ func (mr *MockAuthStoreMockRecorder) ResetResetAttempts(ctx, email any) *gomock.
 }
 
 // SavePendingReg mocks base method.
-func (m *MockAuthStore) SavePendingReg(ctx context.Context, email string, data cache.PendingReg, ttl time.Duration) error {
+func (m *MockAuthStore) SavePendingReg(ctx context.Context, email, regID string, data cache.PendingReg, ttl time.Duration) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SavePendingReg", ctx, email, data, ttl)
+	ret := m.ctrl.Call(m, "SavePendingReg", ctx, email, regID, data, ttl)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SavePendingReg indicates an expected call of SavePendingReg.
-func (mr *MockAuthStoreMockRecorder) SavePendingReg(ctx, email, data, ttl any) *gomock.Call {
+func (mr *MockAuthStoreMockRecorder) SavePendingReg(ctx, email, regID, data, ttl any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePendingReg", reflect.TypeOf((*MockAuthStore)(nil).SavePendingReg), ctx, email, data, ttl)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePendingReg", reflect.TypeOf((*MockAuthStore)(nil).SavePendingReg), ctx, email, regID, data, ttl)
 }
 
 // SavePendingReset mocks base method.

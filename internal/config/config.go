@@ -220,12 +220,17 @@ func Load() (*Config, error) {
 	// уйдут ни при регистрации, ни при восстановлении доступа. В local/dev
 	// используется logMailer (Task 7), так что пустые значения там ок — как
 	// уже устроено с APP_ENV-gated dev-login/Swagger в router.go.
+	// 587 (submission + STARTTLS) is what every relay we'd plausibly use
+	// speaks — Gmail, Unisender Go, SES. Defaulted rather than required so a
+	// local smoke test only needs host/user/password/from; note that the
+	// mailer speaks STARTTLS only, so an implicit-TLS port (465) would need
+	// a code change, not just this value.
+	if cfg.MailSMTPPort == "" {
+		cfg.MailSMTPPort = "587"
+	}
 	if cfg.Env != "local" && cfg.Env != "dev" {
 		if cfg.MailSMTPHost == "" {
 			return nil, errors.New("MAIL_SMTP_HOST is not set")
-		}
-		if cfg.MailSMTPPort == "" {
-			return nil, errors.New("MAIL_SMTP_PORT is not set")
 		}
 		if cfg.MailSMTPUser == "" {
 			return nil, errors.New("MAIL_SMTP_USER is not set")

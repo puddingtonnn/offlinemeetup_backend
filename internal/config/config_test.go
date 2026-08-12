@@ -150,3 +150,22 @@ func TestLoad_MailSMTPCompleteOutsideLocalDev(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "smtp.example.com", cfg.MailSMTPHost)
 }
+
+// MAIL_SMTP_PORT is defaulted rather than required: 587 (submission +
+// STARTTLS) is what every relay we'd plausibly use speaks, and the mailer
+// only speaks STARTTLS anyway.
+func TestLoad_MailSMTPPortDefaultsTo587(t *testing.T) {
+	t.Setenv("JWT_SECRET_KEY", "test-jwt-secret")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-telegram-token")
+	t.Setenv("DB_DSN", "postgres://localhost/test")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("MAIL_SMTP_HOST", "smtp.gmail.com")
+	t.Setenv("MAIL_SMTP_PORT", "")
+	t.Setenv("MAIL_SMTP_USER", "user")
+	t.Setenv("MAIL_SMTP_PASSWORD", "pass")
+	t.Setenv("MAIL_FROM", "noreply@example.com")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "587", cfg.MailSMTPPort)
+}

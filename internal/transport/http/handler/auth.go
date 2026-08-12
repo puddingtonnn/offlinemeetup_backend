@@ -148,12 +148,12 @@ func (h *AuthHandler) DevLogin(w http.ResponseWriter, r *http.Request) {
 
 // Register
 // @Summary      Регистрация по email и паролю
-// @Description  Создаёт «ожидающую» регистрацию и отправляет код подтверждения на email. Пользователь в БД не создаётся до подтверждения. Ответ одинаков независимо от того, существует ли уже аккаунт с таким email.
+// @Description  Создаёт «ожидающую» регистрацию и отправляет код подтверждения на email. Пользователь в БД не создаётся до подтверждения. Ответ одинаков независимо от того, существует ли уже аккаунт с таким email. Возвращает registration_id — его нужно прислать обратно в /verify-email и /resend-code.
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
 // @Param        input body dto.RegisterRequest true "Email, username, пароль"
-// @Success      202  "Accepted"
+// @Success      202  {object}  dto.RegisterResponse
 // @Failure      400  {object}  response.ValidationErrorResponse
 // @Router       /v1/auth/register [post]
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -167,21 +167,22 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Register(r.Context(), req.Email, req.Username, req.Password); err != nil {
+	registrationID, err := h.service.Register(r.Context(), req.Email, req.Username, req.Password)
+	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
 	}
 
-	w.WriteHeader(http.StatusAccepted)
+	response.JSON(w, http.StatusAccepted, dto.RegisterResponse{RegistrationID: registrationID})
 }
 
 // VerifyEmail
 // @Summary      Подтвердить email и завершить регистрацию
-// @Description  Проверяет код из письма, создаёт аккаунт (или добавляет пароль к существующему) и возвращает пару токенов. Если username заняли, пока код был в пути, вернётся 409 — повторите запрос с другим username.
+// @Description  Проверяет код из письма, создаёт аккаунт (или добавляет пароль к существующему) и возвращает пару токенов. Требует registration_id из ответа /register. Если username заняли, пока код был в пути, вернётся 409 — повторите запрос с другим username.
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
-// @Param        input body dto.VerifyEmailRequest true "Email, код, опционально другой username"
+// @Param        input body dto.VerifyEmailRequest true "Email, registration_id, код, опционально другой username"
 // @Success      200  {object}  dto.AuthTokensResponse
 // @Failure      400  {object}  response.ValidationErrorResponse
 // @Failure      409  {object}  response.ErrorResponse
@@ -198,7 +199,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := h.service.VerifyEmail(r.Context(), req.Email, req.Code, req.Username)
+	tokens, err := h.service.VerifyEmail(r.Context(), req.Email, req.RegistrationID, req.Code, req.Username)
 	if err != nil {
 		response.RespondError(w, err, h.log)
 		return
@@ -209,11 +210,11 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 // ResendCode
 // @Summary      Отправить код подтверждения повторно
-// @Description  Генерирует новый код для незавершённой регистрации. Отвечает 202 и в том случае, когда незавершённой регистрации нет — чтобы эндпоинт не подсказывал, какие email заняты.
+// @Description  Генерирует новый код для незавершённой регистрации, адресованной парой (email, registration_id). Отвечает 202 и в том случае, когда такой незавершённой регистрации нет — чтобы эндпоинт не подсказывал, какие email заняты.
 // @Tags         Auth
 // @Accept       json
 // @Produce      json
-// @Param        input body dto.ResendCodeRequest true "Email"
+// @Param        input body dto.ResendCodeRequest true "Email и registration_id из /register"
 // @Success      202  "Accepted"
 // @Failure      400  {object}  response.ValidationErrorResponse
 // @Failure      429  {object}  response.ErrorResponse
@@ -229,7 +230,7 @@ func (h *AuthHandler) ResendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ResendCode(r.Context(), req.Email); err != nil {
+	if err := h.service.ResendCode(r.Context(), req.Email, req.RegistrationID); err != nil {
 		response.RespondError(w, err, h.log)
 		return
 	}

@@ -103,9 +103,25 @@
 								}
 							}
 						},
-						"description": "Starts email/password registration. Always returns 202, even if the email already has an account (Google/Telegram) — no user row is created until the emailed code is confirmed via Verify Email."
+						"description": "Starts email/password registration. Always returns 202 — even if the email already has an account (Google/Telegram) — and no user row is created until the emailed code is confirmed via Verify Email. The response carries a registration_id identifying THIS attempt; it is saved to the {{registrationId}} collection variable by the test script and must be sent back to Verify Email / Resend Code. Two concurrent registrations on one email get different ids and cannot overwrite each other."
 					},
-					"response": []
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// /register answers 202 with the registration_id that",
+									"// /verify-email and /resend-code must echo back. Stash it so the",
+									"// next two requests work without copy-pasting.",
+									"if (pm.response.code === 202) {",
+									"    pm.collectionVariables.set(\"registrationId\", pm.response.json().registration_id);",
+									"}"
+								]
+							}
+						}
+					]
 				},
 				{
 					"name": "Verify Email",
@@ -125,7 +141,7 @@
 						},
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"email\": \"test@example.com\",\n    \"code\": \"123456\",\n    \"username\": null\n}",
+							"raw": "{\n    \"email\": \"test@example.com\",\n    \"registration_id\": \"{{registrationId}}\",\n    \"code\": \"123456\",\n    \"username\": null\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -170,7 +186,7 @@
 						},
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"email\": \"test@example.com\"\n}",
+							"raw": "{\n    \"email\": \"test@example.com\",\n    \"registration_id\": \"{{registrationId}}\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -656,6 +672,11 @@
 		{
 			"key": "baseUrl",
 			"value": "http://localhost:9090",
+			"type": "string"
+		},
+		{
+			"key": "registrationId",
+			"value": "",
 			"type": "string"
 		}
 	]

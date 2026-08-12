@@ -47,12 +47,15 @@ transport/http/handler  →  service          →  repo         →  Bun / Postg
 * Per-request authorization (ownership, membership, capability tokens) enforced inside repository transactions.
 
 #### Email/password flow
-* **Register → verify → login.** `POST /v1/auth/register` takes `email`, `username`, `password` and always answers `202` (registering on an email that already has a Google/Telegram account is indistinguishable from a fresh one — no account-enumeration oracle). Nothing is written to `users` yet: the pending registration (password hash, confirmation-code hash, attempt count) lives in Redis for 15 minutes. `POST /v1/auth/verify-email` takes the 6-digit code emailed to the user and either creates the account or attaches a password to the existing one, returning an access/refresh token pair. `POST /v1/auth/resend-code` re-sends the code (cooldown + hourly quota per email).
+* **Register → verify → login.** `POST /v1/auth/register` takes `email`, `username`, `password` and always answers `202` with a `registration_id` (registering on an email that already has a Google/Telegram account is indistinguishable from a fresh one — no account-enumeration oracle). Nothing is written to `users` yet: the pending registration (password hash, confirmation-code hash, attempt count) lives in Redis for 15 minutes, keyed by `(email, registration_id)`. `POST /v1/auth/verify-email` takes that `registration_id` plus the 6-digit code emailed to the user, and either creates the account or attaches a password to the existing one, returning an access/refresh token pair. `POST /v1/auth/resend-code` re-sends the code for one `registration_id` (cooldown + hourly quota per email).
+* **Why `registration_id`.** It scopes a registration attempt so two concurrent ones on the same email can't overwrite each other. With a single pending object per email, anyone could fire `/register` at an address mid-signup and swap in their own password hash; the victim then had two code emails in the inbox, and confirming the newer one created the account under the *attacker's* password. Attempts now live side by side and neither can see the other. The id is an addressing token, not a secret — the emailed code is still what proves ownership of the address.
+* **Account linking is symmetric.** Registering with a password on an email that already has a social account attaches the password to it, and a social login on an email that already has a password account links that provider to it (`social_accounts`, unique on `(provider, social_id)`) rather than trying to create a second `users` row. Linking only ever keys on a **provider-verified** email — Google's `email_verified` claim is required, and Telegram supplies no email at all.
 * **Login.** `POST /v1/auth/login` takes a single `login` field (email or username — chosen by the presence of `@`) plus `password`. An unknown login and a wrong password return the identical error, and a dummy bcrypt comparison runs even when the login doesn't exist, so response timing can't reveal whether an account exists.
 * **Forgot / reset password.** `POST /v1/auth/forgot-password` always answers `202` regardless of whether the account exists; if it does, a reset code is emailed. `POST /v1/auth/reset-password` takes the code and a new password, and — like a password change — revokes every refresh token for that user, so a stolen session doesn't survive a reset.
 * **Change password.** `PATCH /v1/auth/password` (authenticated) takes the current and new password and, like reset, revokes all other sessions.
 * Passwords are hashed with **bcrypt** (cost 12); the hash lives in its own `user_credentials` table, never on the `users` row returned by authenticated requests.
-* Outbound mail goes through a `Mailer` seam: `logMailer` in `local`/`dev` (logs the code instead of sending — see `make logs`), a real SMTP relay (`github.com/wneessen/go-mail`, via `MAIL_SMTP_HOST/PORT/USER/PASSWORD/FROM`) everywhere else. Sends happen off the request goroutine, so a relay failure doesn't block the `202`; failures are tracked via the `mail_send_failures_total` Prometheus counter.
+* Outbound mail goes through a `Mailer` seam, and **the presence of `MAIL_SMTP_HOST` picks the implementation**, not `APP_ENV`: unset ⇒ `logMailer` (logs the code instead of sending — see `make logs`), set ⇒ a real SMTP relay (`github.com/wneessen/go-mail`, via `MAIL_SMTP_HOST/PORT/USER/PASSWORD/FROM`). Outside `local`/`dev` the relay credentials are required, so the relay is always used there; inside them, filling the vars in is how you smoke-test real delivery without flipping `APP_ENV` (which would also turn off dev-login and Swagger). Sends happen off the request goroutine, so a relay failure doesn't block the `202`; failures are tracked via the `mail_send_failures_total` Prometheus counter.
+* The mailer speaks **STARTTLS on the submission port** (`MAIL_SMTP_PORT`, default `587`). An implicit-TLS port (465) is not supported without a code change. Whatever relay you point it at, the sending domain in `MAIL_FROM` needs SPF/DKIM/DMARC records or the confirmation codes land in spam.
 
 ### Real-time chat (WebSocket)
 * Hub-and-client model: send / edit / delete messages, replies, read receipts, typing indicators.
@@ -87,7 +90,7 @@ transport/http/handler  →  service          →  repo         →  Bun / Postg
 * Make
 
 ### Configuration
-Create a `.env` file in the project root. `DB_DSN`, `JWT_SECRET_KEY`, and `TELEGRAM_BOT_TOKEN` are **required** — the app refuses to start without them. Outside `local`/`dev`, `MAIL_SMTP_HOST/PORT/USER/PASSWORD/FROM` are required too (in `local`/`dev` mail is logged instead of sent, so they may be left empty).
+Create a `.env` file in the project root. `DB_DSN`, `JWT_SECRET_KEY`, and `TELEGRAM_BOT_TOKEN` are **required** — the app refuses to start without them. Outside `local`/`dev`, `MAIL_SMTP_HOST/USER/PASSWORD/FROM` are required too; in `local`/`dev` they may be left empty and mail is logged instead of sent. `MAIL_SMTP_PORT` always defaults to `587`.
 
 ```env
 APP_PORT=9090
@@ -119,9 +122,16 @@ JWT_REFRESH_TTL=720h
 GOOGLE_WEB_CLIENT_ID=your_google_client_id
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 
-# Email/password auth — outbound mail (required outside local/dev; local/dev logs instead of sending)
+# Email/password auth — outbound mail.
+# Setting MAIL_SMTP_HOST switches from the logging mailer to a real relay in
+# ANY environment; outside local/dev the relay vars are required.
+# STARTTLS only — port 465 (implicit TLS) is not supported.
+# Gmail works for low volume: host smtp.gmail.com, user = the full address,
+# password = a Google App Password (not the account password; needs 2FA).
+# Caveats: ~500 mails/day, and Gmail rewrites MAIL_FROM to the authenticated
+# address unless the alias is verified under "Send mail as".
 MAIL_SMTP_HOST=smtp.example.com
-MAIL_SMTP_PORT=587
+MAIL_SMTP_PORT=587               # optional (default shown)
 MAIL_SMTP_USER=your_smtp_user
 MAIL_SMTP_PASSWORD=your_smtp_password
 MAIL_FROM=noreply@example.com

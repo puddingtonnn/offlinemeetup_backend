@@ -86,6 +86,20 @@ func (mr *MockAuthRepositoryMockRecorder) GetBySocialID(ctx, provider, socialID 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBySocialID", reflect.TypeOf((*MockAuthRepository)(nil).GetBySocialID), ctx, provider, socialID)
 }
 
+// LinkSocialAccount mocks base method.
+func (m *MockAuthRepository) LinkSocialAccount(ctx context.Context, userID int64, provider, socialID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LinkSocialAccount", ctx, userID, provider, socialID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LinkSocialAccount indicates an expected call of LinkSocialAccount.
+func (mr *MockAuthRepositoryMockRecorder) LinkSocialAccount(ctx, userID, provider, socialID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LinkSocialAccount", reflect.TypeOf((*MockAuthRepository)(nil).LinkSocialAccount), ctx, userID, provider, socialID)
+}
+
 // MockRefreshTokenRepository is a mock of RefreshTokenRepository interface.
 type MockRefreshTokenRepository struct {
 	ctrl     *gomock.Controller

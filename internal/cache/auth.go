@@ -53,32 +53,37 @@ func NewRedisAuthStore(rdb *redis.Client, log *slog.Logger) *RedisAuthStore {
 
 // --- pending registration -------------------------------------------------
 
-// SavePendingReg overwrites the pending registration object for an email. A
-// repeated register on the same email is a plain SET, not a read-modify-write
-// — that's the whole point of ADR-8 (no DB row to clean up, no risk of
-// squatting on the email UNIQUE constraint).
-func (s *RedisAuthStore) SavePendingReg(ctx context.Context, email string, data PendingReg, ttl time.Duration) error {
-	return s.savePending(ctx, PendingRegKey(email), data, ttl)
+// SavePendingReg writes the pending registration object for one registration
+// attempt, identified by the (email, regID) pair. Because regID is fresh per
+// /register call, this SET can only ever create a NEW key — it can never
+// clobber another in-flight attempt on the same email (see PendingRegKey).
+// It stays a plain SET rather than a read-modify-write: that's the point of
+// ADR-8 (no DB row to clean up, no risk of squatting on the email UNIQUE
+// constraint).
+func (s *RedisAuthStore) SavePendingReg(ctx context.Context, email, regID string, data PendingReg, ttl time.Duration) error {
+	return s.savePending(ctx, PendingRegKey(email, regID), data, ttl)
 }
 
-// GetPendingReg returns the pending registration object for an email.
-// found=false means no pending registration (never started or expired).
-func (s *RedisAuthStore) GetPendingReg(ctx context.Context, email string) (PendingReg, bool, error) {
-	return s.getPending(ctx, PendingRegKey(email))
+// GetPendingReg returns the pending registration object for an (email, regID)
+// pair. found=false means no such pending registration — never started,
+// expired, or the caller supplied an email/regID that don't belong together;
+// all three are deliberately indistinguishable.
+func (s *RedisAuthStore) GetPendingReg(ctx context.Context, email, regID string) (PendingReg, bool, error) {
+	return s.getPending(ctx, PendingRegKey(email, regID))
 }
 
 // DeletePendingReg removes the pending registration object (called once
 // verify succeeds).
-func (s *RedisAuthStore) DeletePendingReg(ctx context.Context, email string) error {
-	return s.deletePending(ctx, PendingRegKey(email))
+func (s *RedisAuthStore) DeletePendingReg(ctx context.Context, email, regID string) error {
+	return s.deletePending(ctx, PendingRegKey(email, regID))
 }
 
 // IncrementPendingRegAttempts atomically increments the Attempts field of the
 // pending registration object (ADR-8's max-attempts check on verify),
 // preserving the object's remaining TTL — a failed attempt must not reset the
 // 15-minute clock. Returns ErrPendingNotFound if the object has expired.
-func (s *RedisAuthStore) IncrementPendingRegAttempts(ctx context.Context, email string) (int, error) {
-	return s.incrementPendingAttempts(ctx, PendingRegKey(email))
+func (s *RedisAuthStore) IncrementPendingRegAttempts(ctx context.Context, email, regID string) (int, error) {
+	return s.incrementPendingAttempts(ctx, PendingRegKey(email, regID))
 }
 
 // --- pending password reset ------------------------------------------------

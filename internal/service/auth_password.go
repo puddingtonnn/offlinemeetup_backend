@@ -40,10 +40,10 @@ type PasswordUserRepository interface {
 // by Login in auth_login.go) the failed-login counter (ADR-13). Implemented
 // by *cache.RedisAuthStore.
 type AuthStore interface {
-	SavePendingReg(ctx context.Context, email string, data cache.PendingReg, ttl time.Duration) error
-	GetPendingReg(ctx context.Context, email string) (cache.PendingReg, bool, error)
-	DeletePendingReg(ctx context.Context, email string) error
-	IncrementPendingRegAttempts(ctx context.Context, email string) (int, error)
+	SavePendingReg(ctx context.Context, email, regID string, data cache.PendingReg, ttl time.Duration) error
+	GetPendingReg(ctx context.Context, email, regID string) (cache.PendingReg, bool, error)
+	DeletePendingReg(ctx context.Context, email, regID string) error
+	IncrementPendingRegAttempts(ctx context.Context, email, regID string) (int, error)
 	CheckAndSetMailCooldown(ctx context.Context, email string, cooldown time.Duration) (bool, error)
 	IncrementMailQuota(ctx context.Context, email string, window time.Duration) (int, error)
 	IncrementLoginFail(ctx context.Context, login string, window time.Duration) (int, error)
@@ -107,24 +107,50 @@ func codeMatches(code, storedHash string) bool {
 	return subtle.ConstantTimeCompare([]byte(hashCode(code)), []byte(storedHash)) == 1
 }
 
-// Register starts an email/password registration (ADR-1, ADR-8). Nothing is
-// written to Postgres: the password hash, the code hash and the chosen
-// username live in Redis for EMAIL_CODE_TTL, and a repeated register on the
-// same email simply overwrites that object. The response is identical whether
-// or not the email already has an account (ADR-7) — only the email template
-// differs — so the endpoint is not an account-existence oracle.
-func (s *AuthService) Register(ctx context.Context, email, username, password string) error {
+// newRegistrationID returns the opaque identifier of ONE registration attempt.
+// /register hands it to the caller and /verify-email must send it back; it is
+// half of the Redis key holding the pending object (cache.PendingRegKey).
+//
+// Unlike the emailed code it is not a secret and proves nothing — it only
+// separates concurrent attempts on the same email so one can't overwrite
+// another. 128 bits of CSPRNG is therefore about collision-freedom, not
+// guessing resistance: two attempts must never land on the same key.
+func newRegistrationID() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generating registration id: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+// Register starts an email/password registration (ADR-1, ADR-8) and returns
+// the attempt's registration ID, which /verify-email must send back. Nothing
+// is written to Postgres: the password hash, the code hash and the chosen
+// username live in Redis for EMAIL_CODE_TTL under the (email, regID) pair.
+//
+// The response is identical whether or not the email already has an account
+// (ADR-7) — only the email template differs — so the endpoint is not an
+// account-existence oracle. That symmetry is why the registration ID is
+// generated FIRST and returned on every non-error path, including the one
+// where the hourly quota silently suppresses the send: a caller must not be
+// able to tell "email sent" from "email suppressed" by the response shape.
+func (s *AuthService) Register(ctx context.Context, email, username, password string) (string, error) {
 	email = normalizeEmail(email)
 	username = strings.TrimSpace(username)
 
 	if !dto.ValidEmail(email) {
-		return fmt.Errorf("%w: invalid email", ErrInvalidInput)
+		return "", fmt.Errorf("%w: invalid email", ErrInvalidInput)
 	}
 	if !dto.ValidUsername(username) {
-		return fmt.Errorf("%w: invalid username", ErrInvalidInput)
+		return "", fmt.Errorf("%w: invalid username", ErrInvalidInput)
 	}
 	if !dto.ValidPassword(password) {
-		return fmt.Errorf("%w: invalid password", ErrInvalidInput)
+		return "", fmt.Errorf("%w: invalid password", ErrInvalidInput)
+	}
+
+	regID, err := newRegistrationID()
+	if err != nil {
+		return "", err
 	}
 
 	// Soft (non-authoritative) username check: a fast 400 so we don't email a
@@ -132,34 +158,30 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 	// VerifyEmail's transaction is the real arbiter (ADR-9).
 	switch _, err := s.passwordRepo.FindIDByUsername(ctx, username); {
 	case err == nil:
-		return fmt.Errorf("%w: username already taken", ErrInvalidInput)
+		return "", fmt.Errorf("%w: username already taken", ErrInvalidInput)
 	case errors.Is(err, repo.ErrNotFound):
 		// free (for now)
 	default:
-		return err
+		return "", err
 	}
 
-	// The hourly quota is checked BEFORE anything touches the pending
-	// registration object. SavePendingReg unconditionally overwrites any
-	// existing pending registration for this email (ADR-8) — if the quota
-	// check ran after that save, ANY request to /register for a victim's
-	// email would destroy their in-flight code before the quota silently
-	// suppressed the attacker's own send, a free repeatable way to deny a
-	// victim's registration. Checking first means an exhausted quota leaves
-	// an existing pending registration completely untouched.
+	// The hourly quota is checked before the send, and is what bounds the
+	// number of pending objects an attacker can pile onto one email — since
+	// regID makes every /register create its OWN key, the per-email quota is
+	// the only thing keeping that from being unbounded.
 	if !s.reserveMailQuota(ctx, email) {
 		s.log.Warn("registration email suppressed by hourly quota", slog.String("email", email))
-		return nil
+		return regID, nil
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
-		return fmt.Errorf("hashing password: %w", err)
+		return "", fmt.Errorf("hashing password: %w", err)
 	}
 
 	code, err := generateCode()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// ADR-7: whether the email already has an account changes only which
@@ -170,7 +192,7 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 		accountExists = true
 	case errors.Is(err, repo.ErrNotFound):
 	default:
-		return err
+		return "", err
 	}
 
 	pending := cache.PendingReg{
@@ -179,45 +201,50 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 		Attempts:     0,
 		Username:     username,
 	}
-	if err := s.authStore.SavePendingReg(ctx, email, pending, s.cfg.EmailCodeTTL); err != nil {
-		return err
+	if err := s.authStore.SavePendingReg(ctx, email, regID, pending, s.cfg.EmailCodeTTL); err != nil {
+		return "", err
 	}
 
 	var subject, body string
 	if accountExists {
-		subject, body = mail.ExistingAccountVerification(code)
+		subject, body = mail.ExistingAccountVerification(code, s.cfg.EmailCodeTTL)
 	} else {
-		subject, body = mail.RegistrationVerification(username, code)
+		subject, body = mail.RegistrationVerification(username, code, s.cfg.EmailCodeTTL)
 	}
 	s.sendMailAsync(ctx, email, subject, body)
 
-	return nil
+	return regID, nil
 }
 
 // VerifyEmail confirms a pending registration and logs the caller in.
 //
+// regID is the registration ID /register returned; together with email it
+// addresses exactly one registration attempt. A wrong or unknown pair is
+// reported the same way as an expired one — there is nothing to distinguish.
+//
 // chosenUsername is the ADR-9 retry path: if the username picked at register
 // time was taken in the meantime, verify returns 409 WITHOUT destroying the
 // pending object, and the caller resubmits with a different username.
-func (s *AuthService) VerifyEmail(ctx context.Context, email, code string, chosenUsername *string) (*TokenPair, error) {
+func (s *AuthService) VerifyEmail(ctx context.Context, email, regID, code string, chosenUsername *string) (*TokenPair, error) {
 	email = normalizeEmail(email)
 
-	pending, found, err := s.authStore.GetPendingReg(ctx, email)
+	pending, found, err := s.authStore.GetPendingReg(ctx, email, regID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		// Never started, or the 15-minute window elapsed.
+		// Never started, wrong email/regID pair, or the 15-minute window
+		// elapsed.
 		return nil, fmt.Errorf("%w: no pending registration", ErrInvalidInput)
 	}
 
 	if pending.Attempts >= s.cfg.EmailCodeMaxAttempts {
-		s.dropPending(ctx, email)
+		s.dropPending(ctx, email, regID)
 		return nil, fmt.Errorf("%w: too many invalid codes", ErrTooManyRequests)
 	}
 
 	if !codeMatches(code, pending.CodeHash) {
-		attempts, err := s.authStore.IncrementPendingRegAttempts(ctx, email)
+		attempts, err := s.authStore.IncrementPendingRegAttempts(ctx, email, regID)
 		if err != nil {
 			if errors.Is(err, cache.ErrPendingNotFound) {
 				return nil, fmt.Errorf("%w: no pending registration", ErrInvalidInput)
@@ -227,7 +254,7 @@ func (s *AuthService) VerifyEmail(ctx context.Context, email, code string, chose
 		if attempts >= s.cfg.EmailCodeMaxAttempts {
 			// Burned through the allowance: invalidate the pending object so the
 			// remaining guesses can't be spent, and make the caller start over.
-			s.dropPending(ctx, email)
+			s.dropPending(ctx, email, regID)
 			return nil, fmt.Errorf("%w: too many invalid codes", ErrTooManyRequests)
 		}
 		return nil, fmt.Errorf("%w: invalid code", ErrInvalidInput)
@@ -249,7 +276,7 @@ func (s *AuthService) VerifyEmail(ctx context.Context, email, code string, chose
 	// Only now is the pending object spent. A failure here is logged, not
 	// fatal: the object expires by TTL anyway, and a replayed verify would
 	// take the ADR-7 attach path (an idempotent credentials upsert).
-	if err := s.authStore.DeletePendingReg(ctx, email); err != nil {
+	if err := s.authStore.DeletePendingReg(ctx, email, regID); err != nil {
 		s.log.Error("deleting spent pending registration", slog.String("err", err.Error()))
 	}
 
@@ -310,15 +337,16 @@ func (s *AuthService) commitRegistration(ctx context.Context, email, username, p
 	}
 }
 
-// ResendCode issues a fresh confirmation code for a pending registration.
+// ResendCode issues a fresh confirmation code for one pending registration,
+// addressed by the same (email, regID) pair as VerifyEmail.
 //
 // It always reports success, including when there is no pending registration
-// for the email: the plan's API table lists only 202/429 for this endpoint, and
+// for the pair: the plan's API table lists only 202/429 for this endpoint, and
 // a 400-on-unknown-email would turn resend into the account-enumeration oracle
 // that ADR-7 spends the whole register flow avoiding. The throttles are applied
 // BEFORE the pending lookup so a prober can't distinguish the two cases by
 // which limits get consumed either.
-func (s *AuthService) ResendCode(ctx context.Context, email string) error {
+func (s *AuthService) ResendCode(ctx context.Context, email, regID string) error {
 	email = normalizeEmail(email)
 	if !dto.ValidEmail(email) {
 		return fmt.Errorf("%w: invalid email", ErrInvalidInput)
@@ -340,7 +368,7 @@ func (s *AuthService) ResendCode(ctx context.Context, email string) error {
 		return fmt.Errorf("%w: hourly email quota exceeded", ErrTooManyRequests)
 	}
 
-	pending, found, err := s.authStore.GetPendingReg(ctx, email)
+	pending, found, err := s.authStore.GetPendingReg(ctx, email, regID)
 	if err != nil {
 		return err
 	}
@@ -355,9 +383,12 @@ func (s *AuthService) ResendCode(ctx context.Context, email string) error {
 
 	// A resend restarts the window: fresh code, fresh TTL, attempts back to 0
 	// (the previous code is dead, so the guesses spent against it are moot).
+	// This is the one place a pending object is legitimately rewritten — and
+	// it rewrites the caller's OWN attempt, since regID had to be presented
+	// to find it in the first place.
 	pending.CodeHash = hashCode(code)
 	pending.Attempts = 0
-	if err := s.authStore.SavePendingReg(ctx, email, pending, s.cfg.EmailCodeTTL); err != nil {
+	if err := s.authStore.SavePendingReg(ctx, email, regID, pending, s.cfg.EmailCodeTTL); err != nil {
 		return err
 	}
 
@@ -372,9 +403,9 @@ func (s *AuthService) ResendCode(ctx context.Context, email string) error {
 
 	var subject, body string
 	if accountExists {
-		subject, body = mail.ExistingAccountVerification(code)
+		subject, body = mail.ExistingAccountVerification(code, s.cfg.EmailCodeTTL)
 	} else {
-		subject, body = mail.RegistrationVerification(pending.Username, code)
+		subject, body = mail.RegistrationVerification(pending.Username, code, s.cfg.EmailCodeTTL)
 	}
 	s.sendMailAsync(ctx, email, subject, body)
 
@@ -397,8 +428,8 @@ func (s *AuthService) reserveMailQuota(ctx context.Context, email string) bool {
 
 // dropPending invalidates a pending registration, logging (not returning) a
 // failure — every caller is already on an error path.
-func (s *AuthService) dropPending(ctx context.Context, email string) {
-	if err := s.authStore.DeletePendingReg(ctx, email); err != nil {
+func (s *AuthService) dropPending(ctx context.Context, email, regID string) {
+	if err := s.authStore.DeletePendingReg(ctx, email, regID); err != nil {
 		s.log.Error("invalidating pending registration", slog.String("err", err.Error()))
 	}
 }
@@ -508,10 +539,10 @@ func (s *AuthService) forgotPasswordAsync(ctx context.Context, userID int64) {
 			return
 		}
 
-		// Personalization only ("Hi %s,") — not security-relevant, so a
-		// generic greeting is used rather than adding a Profile-lookup
+		// Personalization only — not security-relevant, so the greeting is
+		// left generic (empty name) rather than adding a Profile-lookup
 		// dependency this service doesn't otherwise need.
-		subject, body := mail.PasswordReset("there", code)
+		subject, body := mail.PasswordReset("", code, s.cfg.EmailCodeTTL)
 		s.sendMailAsync(bgCtx, email, subject, body)
 	})
 }

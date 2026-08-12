@@ -16,6 +16,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	repopkg "github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
+	repomocks "github.com/puddingtonnn/offlinemeetup_backend/internal/repo/mocks"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -167,9 +169,10 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 	defer ctrl.Finish()
 
 	repo := mocks.NewMockAuthRepository(ctrl)
+	pwdRepo := repomocks.NewMockPasswordUserRepository(ctrl)
 	refresh := mocks.NewMockRefreshTokenRepository(ctrl)
 	cfg := &config.Config{JWTSecret: "test_secret", JWTAccessTTL: 15 * time.Minute, JWTRefreshTTL: 24 * time.Hour}
-	srv := NewAuthService(repo, nil, nil, refresh, nil, nil, nil, cfg, discardLog())
+	srv := NewAuthService(repo, pwdRepo, nil, refresh, nil, nil, nil, cfg, discardLog())
 
 	ctx := context.Background()
 	email := "dev@test.com"
@@ -206,6 +209,9 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 		repo.EXPECT().
 			GetBySocialID(ctx, "dev_local", dummySocialID).
 			Return(nil, nil)
+		// No account on this email yet, so the link-by-email step falls through
+		// to the create path.
+		pwdRepo.EXPECT().FindIDByEmail(ctx, email).Return(int64(0), repopkg.ErrNotFound)
 
 		newUser := &domain.User{
 			ID:    2,
@@ -247,6 +253,7 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 		repo.EXPECT().
 			GetBySocialID(ctx, "dev_local", dummySocialID).
 			Return(nil, nil)
+		pwdRepo.EXPECT().FindIDByEmail(ctx, email).Return(int64(0), repopkg.ErrNotFound)
 
 		repoErr := errors.New("create error")
 		repo.EXPECT().
@@ -256,6 +263,78 @@ func TestAuthService_CreateDevToken(t *testing.T) {
 		tokens, err := srv.CreateDevToken(ctx, email)
 		assert.ErrorIs(t, err, repoErr)
 		assert.Nil(t, tokens)
+	})
+}
+
+// TestAuthService_findOrCreateUser_LinksExistingEmail covers the fix for
+// one-way account linking. Registering with a password on an email that
+// already has a social account attaches the password to it (ADR-7); the
+// reverse — social login on an email that already has a password account —
+// used to take the create path and die on the users-email unique index,
+// permanently locking the owner out of that login method.
+func TestAuthService_findOrCreateUser_LinksExistingEmail(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{JWTSecret: "secret", JWTAccessTTL: 15 * time.Minute, JWTRefreshTTL: 24 * time.Hour}
+
+	t.Run("links instead of creating a second account", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		repo := mocks.NewMockAuthRepository(ctrl)
+		pwdRepo := repomocks.NewMockPasswordUserRepository(ctrl)
+		srv := NewAuthService(repo, pwdRepo, nil, nil, nil, nil, nil, cfg, discardLog())
+
+		existing := &domain.User{ID: 42, Email: "bob@example.com"}
+		repo.EXPECT().GetBySocialID(ctx, "google", "sub-1").Return(nil, nil)
+		// The email is normalized (ADR-3) before it is used as the linking key.
+		pwdRepo.EXPECT().FindIDByEmail(ctx, "bob@example.com").Return(int64(42), nil)
+		repo.EXPECT().LinkSocialAccount(ctx, int64(42), "google", "sub-1").Return(nil)
+		repo.EXPECT().GetByID(ctx, int64(42)).Return(existing, nil)
+		// No CreateUserWithSocial expectation: creating a second row here is
+		// exactly the bug, and gomock fails the test if it happens.
+
+		user, err := srv.findOrCreateUser(ctx, "google", "sub-1", " Bob@Example.COM ")
+		assert.NoError(t, err)
+		assert.Equal(t, existing, user)
+	})
+
+	t.Run("creates when the email is free", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		repo := mocks.NewMockAuthRepository(ctrl)
+		pwdRepo := repomocks.NewMockPasswordUserRepository(ctrl)
+		srv := NewAuthService(repo, pwdRepo, nil, nil, nil, nil, nil, cfg, discardLog())
+
+		created := &domain.User{ID: 43, Email: "new@example.com"}
+		repo.EXPECT().GetBySocialID(ctx, "google", "sub-2").Return(nil, nil)
+		pwdRepo.EXPECT().FindIDByEmail(ctx, "new@example.com").Return(int64(0), repopkg.ErrNotFound)
+		repo.EXPECT().
+			CreateUserWithSocial(ctx, gomock.Any(), "google", "sub-2", gomock.Any()).
+			Return(created, nil)
+
+		user, err := srv.findOrCreateUser(ctx, "google", "sub-2", "new@example.com")
+		assert.NoError(t, err)
+		assert.Equal(t, created, user)
+	})
+
+	t.Run("no email means no linking attempt", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		repo := mocks.NewMockAuthRepository(ctrl)
+		pwdRepo := repomocks.NewMockPasswordUserRepository(ctrl)
+		srv := NewAuthService(repo, pwdRepo, nil, nil, nil, nil, nil, cfg, discardLog())
+
+		created := &domain.User{ID: 44}
+		repo.EXPECT().GetBySocialID(ctx, "telegram", "555").Return(nil, nil)
+		// Telegram supplies no email, so linking must be skipped entirely —
+		// an unexpected FindIDByEmail("") would fail the controller. Linking
+		// every emailless account together would merge strangers.
+		repo.EXPECT().
+			CreateUserWithSocial(ctx, gomock.Any(), "telegram", "555", gomock.Any()).
+			Return(created, nil)
+
+		user, err := srv.findOrCreateUser(ctx, "telegram", "555", "")
+		assert.NoError(t, err)
+		assert.Equal(t, created, user)
 	})
 }
 

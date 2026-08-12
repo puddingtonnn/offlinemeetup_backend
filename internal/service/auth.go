@@ -20,6 +20,7 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/config"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/repo"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service/mail"
 	"google.golang.org/api/idtoken"
 )
@@ -27,6 +28,7 @@ import (
 type AuthRepository interface {
 	GetBySocialID(ctx context.Context, provider, socialID string) (*domain.User, error)
 	CreateUserWithSocial(ctx context.Context, user *domain.User, provider, socialID string, profile *domain.Profile) (*domain.User, error)
+	LinkSocialAccount(ctx context.Context, userID int64, provider, socialID string) error
 	GetByID(ctx context.Context, id int64) (*domain.User, error)
 }
 
@@ -194,34 +196,72 @@ func (s *AuthService) validateTelegramHash(params url.Values) bool {
 	return hmac.Equal([]byte(calculatedHash), []byte(receivedHash))
 }
 
-// findOrCreateUser looks up a user by (provider, socialID), lazily creating a
-// user+profile on first login. It returns the domain user; token issuance is a
-// separate step (issueTokenPair) so every login path mints tokens the same way.
+// findOrCreateUser resolves a social login to an account: by (provider,
+// socialID) first, then by email, and only failing both does it create a new
+// user+profile. It returns the domain user; token issuance is a separate step
+// (issueTokenPair) so every login path mints tokens the same way.
+//
+// The email step is what keeps account linking SYMMETRIC. Registering with a
+// password on an email that already has a social account attaches the
+// password to it (ADR-7, commitRegistration) — without the lookup below the
+// reverse direction was broken: a user who registered with a password and
+// then tapped "sign in with Google" would take the create path, hit the
+// users-email unique index, and be permanently unable to use that login
+// method.
+//
+// email is only trusted as a linking key when the provider VERIFIED it —
+// LoginGoogle rejects an unverified email_verified claim before calling here,
+// and LoginTelegram passes "" because Telegram supplies no email at all.
+// Linking on an unverified address would let anyone claim someone else's
+// account by registering that address with their own provider identity.
 func (s *AuthService) findOrCreateUser(ctx context.Context, provider string, socialID string, email string) (*domain.User, error) {
 	user, err := s.repo.GetBySocialID(ctx, provider, socialID)
 	if err != nil {
 		return nil, err
 	}
+	if user != nil {
+		return user, nil
+	}
 
-	if user == nil {
-		newUser := &domain.User{
-			Email:  email,
-			Role:   "user",
-			Status: domain.UserStatusActive,
-		}
-		tempUsername := fmt.Sprintf("user_%s", socialID)
-		newProfile := &domain.Profile{
-			Username:     tempUsername,
-			AvatarFileID: uuid.NullUUID{},
-			Bio:          "",
-		}
-		user, err = s.repo.CreateUserWithSocial(ctx, newUser, provider, socialID, newProfile)
-		if err != nil {
+	// ADR-3: the email is the cross-provider identity, so it is normalized
+	// here once — both for the lookup and for the row we may create below.
+	email = normalizeEmail(email)
+
+	if email != "" {
+		switch existingID, err := s.passwordRepo.FindIDByEmail(ctx, email); {
+		case err == nil:
+			if err := s.repo.LinkSocialAccount(ctx, existingID, provider, socialID); err != nil {
+				return nil, err
+			}
+			linked, err := s.repo.GetByID(ctx, existingID)
+			if err != nil {
+				return nil, err
+			}
+			if linked == nil {
+				// Deleted between the lookup and the read — treat as "no
+				// such account" rather than creating a second one.
+				return nil, ErrNotFound
+			}
+			return linked, nil
+		case errors.Is(err, repo.ErrNotFound):
+			// No account on this email yet — fall through and create one.
+		default:
 			return nil, err
 		}
 	}
 
-	return user, nil
+	newUser := &domain.User{
+		Email:  email,
+		Role:   "user",
+		Status: domain.UserStatusActive,
+	}
+	tempUsername := fmt.Sprintf("user_%s", socialID)
+	newProfile := &domain.Profile{
+		Username:     tempUsername,
+		AvatarFileID: uuid.NullUUID{},
+		Bio:          "",
+	}
+	return s.repo.CreateUserWithSocial(ctx, newUser, provider, socialID, newProfile)
 }
 
 func (s *AuthService) CreateDevToken(ctx context.Context, email string) (*TokenPair, error) {

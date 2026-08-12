@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -153,6 +154,33 @@ const (
 	testPassword  = "correct horse battery"
 )
 
+// mustRegister runs Register and returns the registration ID /verify-email
+// will need. Every successful register now yields one — including the
+// quota-suppressed path, which is what keeps the response shape uniform.
+func mustRegister(t *testing.T, f *authPwdFixture, ctx context.Context, email, username, password string) string {
+	t.Helper()
+	regID, err := f.svc.Register(ctx, email, username, password)
+	require.NoError(t, err)
+	require.Regexp(t, `^[0-9a-f]{32}$`, regID, "register must return a well-formed registration id")
+	return regID
+}
+
+// listPendingRegs returns every pending-registration key currently in Redis.
+// Now that the key carries the registration ID, "is there a pending object at
+// all" can no longer be answered by a single Get — and several tests need
+// exactly that question (nothing was written / nothing was clobbered).
+func listPendingRegs(t *testing.T, f *authPwdFixture) []string {
+	t.Helper()
+	keys := f.mr.Keys()
+	var pending []string
+	for _, k := range keys {
+		if strings.HasPrefix(k, "auth:pending_reg:") {
+			pending = append(pending, k)
+		}
+	}
+	return pending
+}
+
 // --- Register --------------------------------------------------------------
 
 func TestAuthService_Register_FreeEmail(t *testing.T) {
@@ -164,11 +192,11 @@ func TestAuthService_Register_FreeEmail(t *testing.T) {
 	// No user is created at register time (ADR-8): any Create/Attach call would
 	// fail the gomock controller as an unexpected call.
 
-	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
+	regID := mustRegister(t, f, ctx, testEmail, testUsername, testPassword)
 
-	pending, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	pending, found, err := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, err)
-	require.True(t, found, "pending registration must be saved under the normalized email")
+	require.True(t, found, "pending registration must be saved under the normalized email + registration id")
 	assert.Equal(t, testUsername, pending.Username)
 	assert.Zero(t, pending.Attempts)
 	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(pending.PasswordHash), []byte(testPassword)))
@@ -178,7 +206,7 @@ func TestAuthService_Register_FreeEmail(t *testing.T) {
 
 	msg := f.mailer.wait(t)
 	assert.Equal(t, testNormEmail, msg.to)
-	assert.Contains(t, msg.subject, "Confirm your Meetuper registration")
+	assert.Contains(t, msg.subject, "Подтвердите регистрацию")
 	code := codeFrom(t, msg)
 	// Only the hash is stored; the plaintext code never touches Redis.
 	assert.NotContains(t, pending.CodeHash, code)
@@ -230,7 +258,7 @@ func TestSendMailAsync_IncrementsFailureMetricOnSendError(t *testing.T) {
 	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(0), repo.ErrNotFound)
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
 
-	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
+	_ = mustRegister(t, f, ctx, testEmail, testUsername, testPassword)
 
 	metrics.wait(t)
 }
@@ -243,15 +271,15 @@ func TestAuthService_Register_ExistingEmailIsIndistinguishable(t *testing.T) {
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(42), nil)
 
 	// ADR-7: same nil error (→ same 202) as a fresh registration...
-	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
+	regID := mustRegister(t, f, ctx, testEmail, testUsername, testPassword)
 
-	_, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	_, found, err := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, err)
 	assert.True(t, found)
 
 	// ...only the email template differs.
 	msg := f.mailer.wait(t)
-	assert.Contains(t, msg.subject, "Someone tried to register with your Meetuper email")
+	assert.Contains(t, msg.subject, "Кто-то пытался зарегистрироваться")
 }
 
 func TestAuthService_Register_UsernameTakenIsFast400(t *testing.T) {
@@ -260,50 +288,65 @@ func TestAuthService_Register_UsernameTakenIsFast400(t *testing.T) {
 
 	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(7), nil)
 
-	err := f.svc.Register(ctx, testEmail, testUsername, testPassword)
+	_, err := f.svc.Register(ctx, testEmail, testUsername, testPassword)
 	assert.ErrorIs(t, err, ErrInvalidInput)
 
-	_, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
-	require.NoError(t, storeErr)
-	assert.False(t, found, "no pending registration for a doomed username")
+	assert.Empty(t, listPendingRegs(t, f), "no pending registration for a doomed username")
 	f.mailer.assertNoMail(t)
 }
 
 func TestAuthService_Register_RejectsShortPassword(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	// 7 bytes — below the 8-byte floor (ADR-12).
-	err := f.svc.Register(context.Background(), testEmail, testUsername, "short12")
+	_, err := f.svc.Register(context.Background(), testEmail, testUsername, "short12")
 	assert.ErrorIs(t, err, ErrInvalidInput)
 	f.mailer.assertNoMail(t)
 }
 
-func TestAuthService_Register_RepeatOverwritesPending(t *testing.T) {
+// TestAuthService_Register_ConcurrentAttemptsDoNotClobber is the regression
+// test for the takeover race: a second /register on an email with a
+// registration already in flight must NOT replace it.
+//
+// Before registration IDs there was one pending object per email, so an
+// attacker could fire /register at a victim's address mid-signup and swap in
+// their OWN password hash and username. The victim then received two
+// code emails, and entering the newer code created the account with the
+// ATTACKER's password (or, on the ADR-7 attach path, bolted it onto the
+// victim's existing Google/Telegram account). Each attempt now owns its own
+// key, so neither can see — let alone overwrite — the other.
+func TestAuthService_Register_ConcurrentAttemptsDoNotClobber(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
 
 	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(0), repo.ErrNotFound)
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
-	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
-	first, _, err := f.store.GetPendingReg(ctx, testNormEmail)
-	require.NoError(t, err)
-	f.mailer.wait(t)
-
-	// ADR-8: a second register on the same email just overwrites the object —
-	// new username, new password hash, new code, no DB cleanup involved.
-	f.repo.EXPECT().FindIDByUsername(ctx, "seconduser").Return(int64(0), repo.ErrNotFound)
-	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
-	require.NoError(t, f.svc.Register(ctx, testEmail, "seconduser", "another good password"))
-	second, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	victimRegID := mustRegister(t, f, ctx, testEmail, testUsername, testPassword)
+	victim, found, err := f.store.GetPendingReg(ctx, testNormEmail, victimRegID)
 	require.NoError(t, err)
 	require.True(t, found)
-
-	assert.Equal(t, "seconduser", second.Username)
-	assert.NotEqual(t, first.CodeHash, second.CodeHash, "the old code must be dead")
-	assert.NotEqual(t, first.PasswordHash, second.PasswordHash)
-	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(second.PasswordHash), []byte("another good password")))
-
-	// The first code no longer verifies.
 	f.mailer.wait(t)
+
+	// The attacker registers the victim's email with their own credentials.
+	f.repo.EXPECT().FindIDByUsername(ctx, "mallory").Return(int64(0), repo.ErrNotFound)
+	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
+	attackerRegID := mustRegister(t, f, ctx, testEmail, "mallory", "attacker password")
+	f.mailer.wait(t)
+
+	require.NotEqual(t, victimRegID, attackerRegID, "each attempt gets its own id")
+
+	after, found, err := f.store.GetPendingReg(ctx, testNormEmail, victimRegID)
+	require.NoError(t, err)
+	require.True(t, found, "the victim's attempt must survive the attacker's register")
+	assert.Equal(t, victim.Username, after.Username)
+	assert.Equal(t, victim.CodeHash, after.CodeHash, "the victim's code must still be the live one")
+	assert.Equal(t, victim.PasswordHash, after.PasswordHash, "the attacker's password must not have been swapped in")
+
+	// The attacker's own attempt exists too — harmless, since confirming it
+	// needs the code that went to the victim's mailbox.
+	attacker, found, err := f.store.GetPendingReg(ctx, testNormEmail, attackerRegID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "mallory", attacker.Username)
 }
 
 // exhaustMailQuota burns the whole hourly send allowance for an email.
@@ -327,27 +370,26 @@ func TestAuthService_Register_OverQuotaSucceedsWithoutSending(t *testing.T) {
 
 	// Over the hourly quota the send is suppressed, but the response shape must
 	// not change (the API table has no 429 on register, and a different answer
-	// here would be an inbox-occupancy oracle). Still a plain success → 202.
-	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
+	// here would be an inbox-occupancy oracle). Still a plain success → 202,
+	// and still a well-formed registration id — mustRegister asserts both.
+	regID := mustRegister(t, f, ctx, testEmail, testUsername, testPassword)
 	f.mailer.assertNoMail(t)
 
-	// No pending object is written when the quota is exhausted: SavePendingReg
-	// unconditionally overwrites any existing pending registration for the
-	// email, so calling it here — even to no visible effect for THIS caller —
-	// would let anyone repeatedly nuke a victim's in-flight registration by
-	// burning the shared quota first.
-	_, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	// The id it hands back addresses nothing: with no email sent there is no
+	// code to confirm, so writing a pending object would only be a way to
+	// stockpile Redis entries past the quota.
+	_, found, err := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, err)
 	assert.False(t, found)
+	assert.Empty(t, listPendingRegs(t, f))
 }
 
-// TestAuthService_Register_OverQuotaDoesNotClobberExistingPending is the
-// direct regression test for the fix: once the hourly quota is exhausted,
-// Register must NOT overwrite an already-pending registration for the same
-// email. Before the fix, SavePendingReg ran unconditionally before the quota
-// check, so any request — even one that would itself be quota-suppressed —
-// destroyed a victim's in-flight code, a free repeatable registration-denial
-// attack.
+// TestAuthService_Register_OverQuotaDoesNotClobberExistingPending keeps the
+// earlier fix honest: an exhausted hourly quota must leave an in-flight
+// registration for the same email completely untouched. Registration IDs
+// already make cross-attempt clobbering structurally impossible, but the
+// quota ordering is a second, independent guard worth pinning — it is also
+// what bounds how many pending objects one email can accumulate.
 func TestAuthService_Register_OverQuotaDoesNotClobberExistingPending(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
@@ -355,8 +397,8 @@ func TestAuthService_Register_OverQuotaDoesNotClobberExistingPending(t *testing.
 	// A legitimate pending registration already exists for this email...
 	f.repo.EXPECT().FindIDByUsername(ctx, testUsername).Return(int64(0), repo.ErrNotFound)
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
-	require.NoError(t, f.svc.Register(ctx, testEmail, testUsername, testPassword))
-	original, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	victimRegID := mustRegister(t, f, ctx, testEmail, testUsername, testPassword)
+	original, found, err := f.store.GetPendingReg(ctx, testNormEmail, victimRegID)
 	require.NoError(t, err)
 	require.True(t, found)
 	f.mailer.wait(t)
@@ -367,41 +409,45 @@ func TestAuthService_Register_OverQuotaDoesNotClobberExistingPending(t *testing.
 
 	// An attacker's follow-up register call for the same email, with a
 	// different username/password, must not touch the victim's pending
-	// registration.
+	// registration — nor add one of its own.
 	f.repo.EXPECT().FindIDByUsername(ctx, "attacker").Return(int64(0), repo.ErrNotFound)
-	require.NoError(t, f.svc.Register(ctx, testEmail, "attacker", "some other password"))
+	_ = mustRegister(t, f, ctx, testEmail, "attacker", "some other password")
 	f.mailer.assertNoMail(t)
 
-	after, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	after, found, err := f.store.GetPendingReg(ctx, testNormEmail, victimRegID)
 	require.NoError(t, err)
 	require.True(t, found, "the victim's pending registration must survive")
 	assert.Equal(t, original.Username, after.Username)
 	assert.Equal(t, original.CodeHash, after.CodeHash)
 	assert.Equal(t, original.PasswordHash, after.PasswordHash)
+	assert.Len(t, listPendingRegs(t, f), 1, "the suppressed attempt must not have stored anything")
 }
 
 // --- VerifyEmail -----------------------------------------------------------
 
-// seedPending puts a pending registration in Redis and returns the plaintext
-// code, standing in for "the user received the email".
-func seedPending(t *testing.T, f *authPwdFixture, username string) string {
+// seedPending puts a pending registration in Redis and returns the
+// registration ID plus the plaintext code — together, "the user called
+// /register and received the email".
+func seedPending(t *testing.T, f *authPwdFixture, username string) (regID, code string) {
 	t.Helper()
-	code, err := generateCode()
+	regID, err := newRegistrationID()
+	require.NoError(t, err)
+	code, err = generateCode()
 	require.NoError(t, err)
 	hash, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.MinCost)
 	require.NoError(t, err)
-	require.NoError(t, f.store.SavePendingReg(context.Background(), testNormEmail, cache.PendingReg{
+	require.NoError(t, f.store.SavePendingReg(context.Background(), testNormEmail, regID, cache.PendingReg{
 		PasswordHash: string(hash),
 		CodeHash:     hashCode(code),
 		Username:     username,
 	}, f.cfg.EmailCodeTTL))
-	return code
+	return regID, code
 }
 
 func TestAuthService_VerifyEmail_CreatesUserAndIssuesTokens(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	code := seedPending(t, f, testUsername)
+	regID, code := seedPending(t, f, testUsername)
 
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
 	f.repo.EXPECT().
@@ -409,13 +455,13 @@ func TestAuthService_VerifyEmail_CreatesUserAndIssuesTokens(t *testing.T) {
 		Return(int64(99), nil)
 	f.refresh.EXPECT().Create(ctx, gomock.Any()).Return(nil)
 
-	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, regID, code, nil)
 	require.NoError(t, err)
 	require.NotNil(t, tokens)
 	assert.NotEmpty(t, tokens.AccessToken)
 	assert.NotEmpty(t, tokens.RefreshToken)
 
-	_, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	_, found, err := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, err)
 	assert.False(t, found, "a spent pending registration is deleted")
 }
@@ -423,7 +469,7 @@ func TestAuthService_VerifyEmail_CreatesUserAndIssuesTokens(t *testing.T) {
 func TestAuthService_VerifyEmail_ExistingAccountGetsCredentials(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	code := seedPending(t, f, testUsername)
+	regID, code := seedPending(t, f, testUsername)
 
 	// ADR-7: the email already belongs to user 42 (created via Google). Verify
 	// must attach a password to THAT user — no second user, no second profile,
@@ -435,7 +481,7 @@ func TestAuthService_VerifyEmail_ExistingAccountGetsCredentials(t *testing.T) {
 		return nil
 	})
 
-	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, regID, code, nil)
 	require.NoError(t, err)
 	require.NotNil(t, tokens)
 }
@@ -447,7 +493,7 @@ func TestAuthService_VerifyEmail_ExistingAccountGetsCredentials(t *testing.T) {
 func TestAuthService_VerifyEmail_PasswordOverwriteRevokesAllSessions(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	code := seedPending(t, f, testUsername)
+	regID, code := seedPending(t, f, testUsername)
 
 	const existingID = int64(42)
 
@@ -461,7 +507,7 @@ func TestAuthService_VerifyEmail_PasswordOverwriteRevokesAllSessions(t *testing.
 	)
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(existingID, nil)
 
-	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, regID, code, nil)
 	require.NoError(t, err)
 	require.NotNil(t, tokens)
 	assert.NotEmpty(t, tokens.RefreshToken, "the caller still gets a working session")
@@ -472,26 +518,28 @@ func TestAuthService_VerifyEmail_PasswordOverwriteRevokesAllSessions(t *testing.
 func TestAuthService_VerifyEmail_RevokeFailureFailsVerify(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	code := seedPending(t, f, testUsername)
+	regID, code := seedPending(t, f, testUsername)
 
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(42), nil)
 	f.repo.EXPECT().AttachPassword(ctx, int64(42), gomock.Any()).Return(nil)
 	f.refresh.EXPECT().RevokeAllForUser(ctx, int64(42)).Return(errors.New("db down"))
 	// No Create expectation: no token pair may be issued.
 
-	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, regID, code, nil)
 	assert.Nil(t, tokens)
 	require.Error(t, err)
 
 	// The pending object survives so the user can simply retry once the DB is back.
-	_, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
+	_, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, storeErr)
 	assert.True(t, found)
 }
 
 func TestAuthService_VerifyEmail_NoPendingIs400(t *testing.T) {
 	f := setupAuthPasswordTest(t)
-	tokens, err := f.svc.VerifyEmail(context.Background(), testEmail, "123456", nil)
+	regID, err := newRegistrationID()
+	require.NoError(t, err)
+	tokens, err := f.svc.VerifyEmail(context.Background(), testEmail, regID, "123456", nil)
 	assert.Nil(t, tokens)
 	assert.ErrorIs(t, err, ErrInvalidInput)
 }
@@ -499,17 +547,17 @@ func TestAuthService_VerifyEmail_NoPendingIs400(t *testing.T) {
 func TestAuthService_VerifyEmail_ExpiredPendingIs400(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	code := seedPending(t, f, testUsername)
+	regID, code := seedPending(t, f, testUsername)
 
 	// Let the 15-minute TTL lapse (ADR-8) rather than deleting the key — this
 	// is the "user came back tomorrow with a valid-looking code" case.
 	f.mr.FastForward(f.cfg.EmailCodeTTL + time.Minute)
 
-	_, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	_, found, err := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, err)
 	require.False(t, found)
 
-	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, regID, code, nil)
 	assert.Nil(t, tokens)
 	assert.ErrorIs(t, err, ErrInvalidInput)
 }
@@ -517,7 +565,7 @@ func TestAuthService_VerifyEmail_ExpiredPendingIs400(t *testing.T) {
 func TestAuthService_VerifyEmail_WrongCodeExhaustsAttempts(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	code := seedPending(t, f, testUsername)
+	regID, code := seedPending(t, f, testUsername)
 
 	wrong := "000000"
 	if wrong == code {
@@ -526,32 +574,32 @@ func TestAuthService_VerifyEmail_WrongCodeExhaustsAttempts(t *testing.T) {
 
 	// EmailCodeMaxAttempts is 3 in the fixture: two wrong codes are plain 400s.
 	for i := 0; i < f.cfg.EmailCodeMaxAttempts-1; i++ {
-		_, err := f.svc.VerifyEmail(ctx, testEmail, wrong, nil)
+		_, err := f.svc.VerifyEmail(ctx, testEmail, regID, wrong, nil)
 		assert.ErrorIs(t, err, ErrInvalidInput, "attempt %d", i+1)
 
-		pending, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
+		pending, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail, regID)
 		require.NoError(t, storeErr)
 		require.True(t, found, "pending survives a merely-wrong code")
 		assert.Equal(t, i+1, pending.Attempts)
 	}
 
 	// The last one burns the allowance: 429 and the pending object is gone.
-	_, err := f.svc.VerifyEmail(ctx, testEmail, wrong, nil)
+	_, err := f.svc.VerifyEmail(ctx, testEmail, regID, wrong, nil)
 	assert.ErrorIs(t, err, ErrTooManyRequests)
 
-	_, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
+	_, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, storeErr)
 	assert.False(t, found, "pending is invalidated once attempts are exhausted")
 
 	// Even the RIGHT code no longer works — the registration must be restarted.
-	_, err = f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	_, err = f.svc.VerifyEmail(ctx, testEmail, regID, code, nil)
 	assert.ErrorIs(t, err, ErrInvalidInput)
 }
 
 func TestAuthService_VerifyEmail_UsernameRaceKeepsPending(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	code := seedPending(t, f, testUsername)
+	regID, code := seedPending(t, f, testUsername)
 
 	// ADR-9: someone took the username between register and verify. The unique
 	// index inside the transaction is the arbiter.
@@ -560,11 +608,11 @@ func TestAuthService_VerifyEmail_UsernameRaceKeepsPending(t *testing.T) {
 		CreateUserWithPassword(ctx, testNormEmail, testUsername, gomock.Any()).
 		Return(int64(0), repo.ErrUsernameTaken)
 
-	tokens, err := f.svc.VerifyEmail(ctx, testEmail, code, nil)
+	tokens, err := f.svc.VerifyEmail(ctx, testEmail, regID, code, nil)
 	assert.Nil(t, tokens)
 	assert.ErrorIs(t, err, ErrAlreadyExists, "→ 409")
 
-	pending, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
+	pending, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, storeErr)
 	require.True(t, found, "ADR-9: the pending object survives a username conflict")
 	assert.Zero(t, pending.Attempts, "a username conflict is not a wrong-code attempt")
@@ -577,11 +625,11 @@ func TestAuthService_VerifyEmail_UsernameRaceKeepsPending(t *testing.T) {
 		Return(int64(101), nil)
 	f.refresh.EXPECT().Create(ctx, gomock.Any()).Return(nil)
 
-	tokens, err = f.svc.VerifyEmail(ctx, testEmail, code, &other)
+	tokens, err = f.svc.VerifyEmail(ctx, testEmail, regID, code, &other)
 	require.NoError(t, err)
 	require.NotNil(t, tokens)
 
-	_, found, storeErr = f.store.GetPendingReg(ctx, testNormEmail)
+	_, found, storeErr = f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, storeErr)
 	assert.False(t, found)
 }
@@ -591,19 +639,19 @@ func TestAuthService_VerifyEmail_UsernameRaceKeepsPending(t *testing.T) {
 func TestAuthService_ResendCode_RotatesCodeAndResetsAttempts(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	oldCode := seedPending(t, f, testUsername)
+	regID, oldCode := seedPending(t, f, testUsername)
 
 	// Burn one wrong attempt so we can prove the counter resets.
-	_, err := f.svc.VerifyEmail(ctx, testEmail, "000000", nil)
+	_, err := f.svc.VerifyEmail(ctx, testEmail, regID, "000000", nil)
 	assert.ErrorIs(t, err, ErrInvalidInput)
 
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
-	require.NoError(t, f.svc.ResendCode(ctx, testEmail))
+	require.NoError(t, f.svc.ResendCode(ctx, testEmail, regID))
 
 	msg := f.mailer.wait(t)
 	newCode := codeFrom(t, msg)
 
-	pending, found, err := f.store.GetPendingReg(ctx, testNormEmail)
+	pending, found, err := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Zero(t, pending.Attempts)
@@ -616,21 +664,23 @@ func TestAuthService_ResendCode_NoPendingStillSucceeds(t *testing.T) {
 
 	// Anti-enumeration: no pending registration is NOT an error, and no email
 	// is sent. The caller cannot tell this apart from a real resend.
-	require.NoError(t, f.svc.ResendCode(context.Background(), "stranger@example.com"))
+	strangerRegID, err := newRegistrationID()
+	require.NoError(t, err)
+	require.NoError(t, f.svc.ResendCode(context.Background(), "stranger@example.com", strangerRegID))
 	f.mailer.assertNoMail(t)
 }
 
 func TestAuthService_ResendCode_CooldownIs429(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	seedPending(t, f, testUsername)
+	regID, _ := seedPending(t, f, testUsername)
 
 	f.repo.EXPECT().FindIDByEmail(ctx, testNormEmail).Return(int64(0), repo.ErrNotFound)
-	require.NoError(t, f.svc.ResendCode(ctx, testEmail))
+	require.NoError(t, f.svc.ResendCode(ctx, testEmail, regID))
 	f.mailer.wait(t)
 
 	// Double-click: the cooldown is claimed atomically, so no second email.
-	err := f.svc.ResendCode(ctx, testEmail)
+	err := f.svc.ResendCode(ctx, testEmail, regID)
 	assert.ErrorIs(t, err, ErrTooManyRequests)
 	f.mailer.assertNoMail(t)
 }
@@ -638,20 +688,20 @@ func TestAuthService_ResendCode_CooldownIs429(t *testing.T) {
 func TestAuthService_ResendCode_QuotaExceededIs429(t *testing.T) {
 	f := setupAuthPasswordTest(t)
 	ctx := context.Background()
-	oldCode := seedPending(t, f, testUsername)
+	regID, oldCode := seedPending(t, f, testUsername)
 
 	// The hourly allowance is already spent (e.g. by earlier resends). The
 	// cooldown is untouched, so this call gets past it and is rejected by the
 	// quota specifically.
 	exhaustMailQuota(t, f, testNormEmail)
 
-	err := f.svc.ResendCode(ctx, testEmail)
+	err := f.svc.ResendCode(ctx, testEmail, regID)
 	assert.ErrorIs(t, err, ErrTooManyRequests)
 	f.mailer.assertNoMail(t)
 
 	// Rejected before the pending object is touched: the code the user already
 	// has in their inbox must stay valid.
-	pending, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail)
+	pending, found, storeErr := f.store.GetPendingReg(ctx, testNormEmail, regID)
 	require.NoError(t, storeErr)
 	require.True(t, found)
 	assert.Equal(t, hashCode(oldCode), pending.CodeHash)
@@ -689,7 +739,7 @@ func TestAuthService_ForgotPassword_KnownLogin_SendsMailAndSavesPendingReset(t *
 
 	msg := f.mailer.wait(t)
 	assert.Equal(t, testNormEmail, msg.to)
-	assert.Contains(t, msg.subject, "Reset your Meetuper password")
+	assert.Contains(t, msg.subject, "Восстановление пароля")
 	code := codeFrom(t, msg)
 
 	pending, found, storeErr := f.store.GetPendingReset(ctx, testNormEmail)

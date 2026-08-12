@@ -299,7 +299,7 @@ const docTemplate = `{
         },
         "/v1/auth/register": {
             "post": {
-                "description": "Создаёт «ожидающую» регистрацию и отправляет код подтверждения на email. Пользователь в БД не создаётся до подтверждения. Ответ одинаков независимо от того, существует ли уже аккаунт с таким email.",
+                "description": "Создаёт «ожидающую» регистрацию и отправляет код подтверждения на email. Пользователь в БД не создаётся до подтверждения. Ответ одинаков независимо от того, существует ли уже аккаунт с таким email. Возвращает registration_id — его нужно прислать обратно в /verify-email и /resend-code.",
                 "consumes": [
                     "application/json"
                 ],
@@ -323,7 +323,10 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "202": {
-                        "description": "Accepted"
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RegisterResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -336,7 +339,7 @@ const docTemplate = `{
         },
         "/v1/auth/resend-code": {
             "post": {
-                "description": "Генерирует новый код для незавершённой регистрации. Отвечает 202 и в том случае, когда незавершённой регистрации нет — чтобы эндпоинт не подсказывал, какие email заняты.",
+                "description": "Генерирует новый код для незавершённой регистрации, адресованной парой (email, registration_id). Отвечает 202 и в том случае, когда такой незавершённой регистрации нет — чтобы эндпоинт не подсказывал, какие email заняты.",
                 "consumes": [
                     "application/json"
                 ],
@@ -349,7 +352,7 @@ const docTemplate = `{
                 "summary": "Отправить код подтверждения повторно",
                 "parameters": [
                     {
-                        "description": "Email",
+                        "description": "Email и registration_id из /register",
                         "name": "input",
                         "in": "body",
                         "required": true,
@@ -452,7 +455,7 @@ const docTemplate = `{
         },
         "/v1/auth/verify-email": {
             "post": {
-                "description": "Проверяет код из письма, создаёт аккаунт (или добавляет пароль к существующему) и возвращает пару токенов. Если username заняли, пока код был в пути, вернётся 409 — повторите запрос с другим username.",
+                "description": "Проверяет код из письма, создаёт аккаунт (или добавляет пароль к существующему) и возвращает пару токенов. Требует registration_id из ответа /register. Если username заняли, пока код был в пути, вернётся 409 — повторите запрос с другим username.",
                 "consumes": [
                     "application/json"
                 ],
@@ -465,7 +468,7 @@ const docTemplate = `{
                 "summary": "Подтвердить email и завершить регистрацию",
                 "parameters": [
                     {
-                        "description": "Email, код, опционально другой username",
+                        "description": "Email, registration_id, код, опционально другой username",
                         "name": "input",
                         "in": "body",
                         "required": true,
@@ -2013,10 +2016,21 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.RegisterResponse": {
+            "type": "object",
+            "properties": {
+                "registration_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ResendCodeRequest": {
             "type": "object",
             "properties": {
                 "email": {
+                    "type": "string"
+                },
+                "registration_id": {
                     "type": "string"
                 }
             }
@@ -2111,6 +2125,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "email": {
+                    "type": "string"
+                },
+                "registration_id": {
                     "type": "string"
                 },
                 "username": {

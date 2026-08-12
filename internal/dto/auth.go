@@ -11,6 +11,29 @@ import (
 // retype on a phone).
 var codeRegexp = regexp.MustCompile(`^[0-9]{6}$`)
 
+// registrationIDRegexp matches the shape of the registration ID returned by
+// /register (AuthService.newRegistrationID: 16 random bytes, hex-encoded).
+// It is checked here because the value becomes part of a Redis key — an
+// unvalidated one would let a caller inject arbitrary key material.
+var registrationIDRegexp = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// maxLoginBytes caps the email-or-username login field. 254 is the maximum
+// length of an email address per RFC 5321, and usernames are far shorter.
+//
+// The cap exists because Login feeds the failed-attempt counter's Redis key
+// (cache.LoginFailKey) directly: without it, an unauthenticated caller could
+// mint arbitrarily large Redis keys, each held for the whole LOGIN_FAIL_WINDOW.
+const maxLoginBytes = 254
+
+// validLogin reports whether an email-or-username login field is present and
+// within maxLoginBytes. Nothing more is checked: the server decides email vs
+// username by the presence of '@' (ADR-2), and a stricter format check here
+// would only turn a failed login into a different, more informative error.
+func validLogin(login string) bool {
+	trimmed := strings.TrimSpace(login)
+	return trimmed != "" && len(trimmed) <= maxLoginBytes
+}
+
 // Password length policy is measured in BYTES, not runes (ADR-12): bcrypt
 // silently truncates its input at 72 bytes, so a 40-character Cyrillic
 // password (80 bytes in UTF-8) would have its tail ignored. This is the
@@ -60,20 +83,33 @@ func (r *RegisterRequest) Validate() map[string]string {
 	return errs
 }
 
+// RegisterResponse is what /register answers with. RegistrationID identifies
+// this one registration attempt and must be echoed back to /verify-email and
+// /resend-code; it lets concurrent attempts on the same email coexist instead
+// of overwriting each other (see cache.PendingRegKey). It is an addressing
+// token, not a secret — the emailed code is what proves ownership.
+type RegisterResponse struct {
+	RegistrationID string `json:"registration_id"`
+}
+
 // VerifyEmailRequest confirms a pending registration. Username is optional and
 // only used on the ADR-9 retry path: if the username chosen at register time
 // was taken between register and verify, the caller resubmits verify with a
 // different one instead of starting over.
 type VerifyEmailRequest struct {
-	Email    string  `json:"email"`
-	Code     string  `json:"code"`
-	Username *string `json:"username"`
+	Email          string  `json:"email"`
+	RegistrationID string  `json:"registration_id"`
+	Code           string  `json:"code"`
+	Username       *string `json:"username"`
 }
 
 func (r *VerifyEmailRequest) Validate() map[string]string {
 	errs := make(map[string]string)
 	if !ValidEmail(strings.TrimSpace(strings.ToLower(r.Email))) {
 		errs["email"] = "must be a valid email address"
+	}
+	if !registrationIDRegexp.MatchString(r.RegistrationID) {
+		errs["registration_id"] = "must be the 32-char registration_id returned by /register"
 	}
 	if !codeRegexp.MatchString(r.Code) {
 		errs["code"] = "must be a 6-digit code"
@@ -85,15 +121,20 @@ func (r *VerifyEmailRequest) Validate() map[string]string {
 }
 
 // ResendCodeRequest asks for a fresh confirmation code for a pending
-// registration.
+// registration, addressed by the same (email, registration_id) pair as
+// VerifyEmailRequest.
 type ResendCodeRequest struct {
-	Email string `json:"email"`
+	Email          string `json:"email"`
+	RegistrationID string `json:"registration_id"`
 }
 
 func (r *ResendCodeRequest) Validate() map[string]string {
 	errs := make(map[string]string)
 	if !ValidEmail(strings.TrimSpace(strings.ToLower(r.Email))) {
 		errs["email"] = "must be a valid email address"
+	}
+	if !registrationIDRegexp.MatchString(r.RegistrationID) {
+		errs["registration_id"] = "must be the 32-char registration_id returned by /register"
 	}
 	return errs
 }
@@ -109,8 +150,8 @@ type LoginRequest struct {
 
 func (r *LoginRequest) Validate() map[string]string {
 	errs := make(map[string]string)
-	if strings.TrimSpace(r.Login) == "" {
-		errs["login"] = "must not be empty"
+	if !validLogin(r.Login) {
+		errs["login"] = "must not be empty and at most 254 characters"
 	}
 	if r.Password == "" {
 		errs["password"] = "must not be empty"
@@ -129,8 +170,8 @@ type ForgotPasswordRequest struct {
 
 func (r *ForgotPasswordRequest) Validate() map[string]string {
 	errs := make(map[string]string)
-	if strings.TrimSpace(r.Login) == "" {
-		errs["login"] = "must not be empty"
+	if !validLogin(r.Login) {
+		errs["login"] = "must not be empty and at most 254 characters"
 	}
 	return errs
 }

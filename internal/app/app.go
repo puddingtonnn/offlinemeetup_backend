@@ -35,11 +35,6 @@ type App struct {
 	DB     *bun.DB
 	hub    *websocket.Hub
 	rdb    *redis.Client
-
-	// credentialsRepo is also handed to AuthService (its Login reads the
-	// stored hash) and kept here too — Task 6's forgot/reset-password flow
-	// is expected to need it directly.
-	credentialsRepo *repo.CredentialsRepo
 }
 
 func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
@@ -92,14 +87,17 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 	refreshRepo := repo.NewRefreshTokenRepo(db)
 	credentialsRepo := repo.NewCredentialsRepo(db)
 
-	// local/dev use logMailer (logs the code instead of sending, see
-	// mail.NewLogMailer doc); everywhere else uses the real SMTP relay.
-	// Mirrors the APP_ENV gating used for dev-login/swagger in router.go.
-	// config.Load already fails fast outside local/dev if the MAIL_SMTP_*
-	// secrets are empty, so smtpMailer's own error path here is only
-	// reachable on a malformed (non-empty) value, e.g. a non-numeric port.
+	// The presence of MAIL_SMTP_HOST decides, not APP_ENV: outside local/dev
+	// config.Load already refuses to start without the MAIL_SMTP_* secrets,
+	// so there the relay is always used; inside local/dev they are optional
+	// and default to logMailer (logs the code instead of sending, see
+	// mail.NewLogMailer doc) — but setting them locally now switches to a
+	// real relay, which is how you smoke-test actual delivery without
+	// flipping APP_ENV (that would also turn off dev-login and Swagger).
+	// smtpMailer's error path is only reachable on a malformed (non-empty)
+	// value, e.g. a non-numeric port.
 	var mailer mail.Mailer
-	if cfg.Env == "local" || cfg.Env == "dev" {
+	if cfg.MailSMTPHost == "" {
 		mailer = mail.NewLogMailer(log)
 	} else {
 		smtpMailer, err := mail.NewSMTPMailer(cfg.MailSMTPHost, cfg.MailSMTPPort, cfg.MailSMTPUser, cfg.MailSMTPPassword, cfg.MailFrom)
@@ -142,8 +140,6 @@ func New(log *slog.Logger, cfg *config.Config, db *bun.DB) *App {
 		DB:     db,
 		hub:    hub,
 		rdb:    rdb,
-
-		credentialsRepo: credentialsRepo,
 	}
 }
 

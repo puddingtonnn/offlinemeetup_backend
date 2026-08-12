@@ -76,8 +76,21 @@ func PresenceLastSeenKey(userID int64) string {
 // PendingRegKey — ключ незавершённой регистрации (ADR-8): {password_hash,
 // code_hash, attempts, username}, TTL 15 мин, единственный источник правды до
 // verify. Email приводится к lower — ADR-3 хранит/ищет email по lower+trim.
-func PendingRegKey(email string) string {
-	return pendingRegPrefix + strings.ToLower(strings.TrimSpace(email))
+//
+// В ключ входит ещё и regID — случайный идентификатор попытки регистрации,
+// который /register возвращает клиенту, а /verify-email обязан прислать
+// обратно. Без него ключ был бы один на email, и параллельный /register на
+// чужой email ПЕРЕЗАПИСЫВАЛ бы живой pending-объект: жертва получала два
+// письма с кодами, и, введя код из последнего, создавала аккаунт с паролем
+// атакующего (а на ADR-7-ветке — прикручивала его пароль к уже
+// существующему аккаунту). С regID попытки живут параллельно и не видят
+// друг друга, поэтому перезаписать чужую невозможно в принципе.
+//
+// Пара (email, regID) целиком лежит в ключе, так что «не тот email» и «не
+// тот regID» — это просто промах по ключу, неотличимый от истёкшего TTL. Ни
+// сверки полей, ни второго источника правды.
+func PendingRegKey(email, regID string) string {
+	return pendingRegPrefix + strings.ToLower(strings.TrimSpace(email)) + ":" + regID
 }
 
 // PendingResetKey — ключ незавершённого сброса пароля (forgot/reset), та же

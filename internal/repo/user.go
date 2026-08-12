@@ -224,6 +224,32 @@ func (r *UserRepo) AttachPassword(ctx context.Context, userID int64, passwordHas
 	})
 }
 
+// LinkSocialAccount attaches a social provider identity to an EXISTING user.
+// Used when a social login resolves to an email that already has an account
+// (created by a password registration, or by another provider): without this
+// the login path would try to INSERT a second user row carrying the same
+// email and hit the users-email unique index, locking the owner out of that
+// login method for good.
+//
+// ON CONFLICT DO NOTHING makes it idempotent against two concurrent first
+// logins on the same provider identity (both callers then read the same
+// user).
+func (r *UserRepo) LinkSocialAccount(ctx context.Context, userID int64, provider, socialID string) error {
+	social := &domain.SocialAccount{
+		UserID:   userID,
+		Provider: provider,
+		SocialID: socialID,
+	}
+	_, err := r.db.NewInsert().
+		Model(social).
+		On("CONFLICT (provider, social_id) DO NOTHING").
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("linking social account: %w", err)
+	}
+	return nil
+}
+
 func (r *UserRepo) GetTagsByUserID(ctx context.Context, userID int64) ([]domain.Tag, error) {
 	var tags []domain.Tag
 

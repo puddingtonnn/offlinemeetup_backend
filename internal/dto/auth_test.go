@@ -64,6 +64,75 @@ func TestValidPassword(t *testing.T) {
 	}
 }
 
+// The login field is capped because it becomes part of a Redis key (the
+// failed-attempt counter, cache.LoginFailKey) — an uncapped one lets an
+// unauthenticated caller mint arbitrarily large keys, each held for the whole
+// LOGIN_FAIL_WINDOW.
+func TestLoginRequest_Validate_CapsLoginLength(t *testing.T) {
+	tests := []struct {
+		name    string
+		login   string
+		wantErr bool
+	}{
+		{name: "ordinary email", login: "bob@example.com"},
+		{name: "ordinary username", login: "bob"},
+		{name: "empty", login: "", wantErr: true},
+		{name: "whitespace only", login: "   ", wantErr: true},
+		{name: "at the cap (254)", login: strings.Repeat("a", 254)},
+		{name: "over the cap (255)", login: strings.Repeat("a", 255), wantErr: true},
+		{name: "cap applies after trimming", login: "  " + strings.Repeat("a", 254) + "  "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := (&LoginRequest{Login: tt.login, Password: "a good password"}).Validate()
+			_, gotErr := errs["login"]
+			assert.Equal(t, tt.wantErr, gotErr)
+		})
+	}
+}
+
+// ForgotPasswordRequest takes the same email-or-username field, so it needs
+// the same cap.
+func TestForgotPasswordRequest_Validate_CapsLoginLength(t *testing.T) {
+	assert.NotContains(t, (&ForgotPasswordRequest{Login: "bob@example.com"}).Validate(), "login")
+	assert.Contains(t, (&ForgotPasswordRequest{Login: ""}).Validate(), "login")
+	assert.Contains(t, (&ForgotPasswordRequest{Login: strings.Repeat("a", 255)}).Validate(), "login")
+}
+
+// registration_id also lands in a Redis key, and unlike the login it has an
+// exact known shape (32 lowercase hex chars from AuthService.Register), so it
+// is checked strictly.
+func TestVerifyEmailRequest_Validate_RegistrationID(t *testing.T) {
+	valid := "0123456789abcdef0123456789abcdef"
+
+	tests := []struct {
+		name    string
+		regID   string
+		wantErr bool
+	}{
+		{name: "well-formed", regID: valid},
+		{name: "empty", regID: "", wantErr: true},
+		{name: "too short", regID: "0123456789abcdef", wantErr: true},
+		{name: "too long", regID: valid + "00", wantErr: true},
+		{name: "uppercase hex", regID: strings.ToUpper(valid), wantErr: true},
+		{name: "non-hex characters", regID: strings.Repeat("z", 32), wantErr: true},
+		{name: "redis key separator injected", regID: "0123456789abcdef0123456789abcde:", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &VerifyEmailRequest{Email: "bob@example.com", RegistrationID: tt.regID, Code: "123456"}
+			_, gotErr := req.Validate()["registration_id"]
+			assert.Equal(t, tt.wantErr, gotErr)
+
+			resend := &ResendCodeRequest{Email: "bob@example.com", RegistrationID: tt.regID}
+			_, gotErr = resend.Validate()["registration_id"]
+			assert.Equal(t, tt.wantErr, gotErr, "resend must enforce the same shape")
+		})
+	}
+}
+
 func TestValidEmail(t *testing.T) {
 	tests := []struct {
 		name  string
