@@ -62,6 +62,9 @@ func RespondError(w http.ResponseWriter, err error, log *slog.Logger) {
 	case errors.Is(err, service.ErrUnauthorized):
 		statusCode = http.StatusUnauthorized
 		msg = "Unauthorized"
+	case errors.Is(err, service.ErrTooManyRequests):
+		statusCode = http.StatusTooManyRequests
+		msg = "Too many requests"
 	case errors.Is(err, service.ErrInvalidInput):
 		statusCode = http.StatusBadRequest
 		msg = "Invalid input data"

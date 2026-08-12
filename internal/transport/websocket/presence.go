@@ -6,11 +6,11 @@ import (
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 )
 
-// presenceEvent builds a userOnline / userOffline WS frame. nickname is the
-// subject's display name. lastSeen is a unix timestamp, set only for offline
-// events.
-func presenceEvent(eventType string, userID int64, online bool, nickname string, lastSeen *int64) []byte {
-	payload, _ := json.Marshal(WSPresencePayload{UserID: userID, Online: online, Nickname: nickname, LastSeen: lastSeen})
+// presenceEvent builds a userOnline / userOffline WS frame. displayName is
+// the subject's display name. lastSeen is a unix timestamp, set only for
+// offline events.
+func presenceEvent(eventType string, userID int64, online bool, displayName string, lastSeen *int64) []byte {
+	payload, _ := json.Marshal(WSPresencePayload{UserID: userID, Online: online, DisplayName: displayName, LastSeen: lastSeen})
 	data, _ := json.Marshal(WSEvent{Type: eventType, Payload: payload})
 	return data
 }
@@ -24,7 +24,7 @@ func presenceSnapshotEvent(statuses []service.PresenceStatus) []byte {
 			v := st.LastSeen.Unix()
 			ls = &v
 		}
-		users = append(users, WSPresencePayload{UserID: st.UserID, Online: st.Online, Nickname: st.Nickname, LastSeen: ls})
+		users = append(users, WSPresencePayload{UserID: st.UserID, Online: st.Online, DisplayName: st.DisplayName, LastSeen: ls})
 	}
 	payload, _ := json.Marshal(WSPresenceSnapshotPayload{Users: users})
 	data, _ := json.Marshal(WSEvent{Type: EventPresenceSnapshot, Payload: payload})

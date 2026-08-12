@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	domain "github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	dto "github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -54,4 +55,43 @@ func (m *MockTagRepository) GetAll(ctx context.Context) ([]domain.Tag, error) {
 func (mr *MockTagRepositoryMockRecorder) GetAll(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAll", reflect.TypeOf((*MockTagRepository)(nil).GetAll), ctx)
+}
+
+// MocktagCache is a mock of tagCache interface.
+type MocktagCache struct {
+	ctrl     *gomock.Controller
+	recorder *MocktagCacheMockRecorder
+	isgomock struct{}
+}
+
+// MocktagCacheMockRecorder is the mock recorder for MocktagCache.
+type MocktagCacheMockRecorder struct {
+	mock *MocktagCache
+}
+
+// NewMocktagCache creates a new mock instance.
+func NewMocktagCache(ctrl *gomock.Controller) *MocktagCache {
+	mock := &MocktagCache{ctrl: ctrl}
+	mock.recorder = &MocktagCacheMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MocktagCache) EXPECT() *MocktagCacheMockRecorder {
+	return m.recorder
+}
+
+// ListTags mocks base method.
+func (m *MocktagCache) ListTags(ctx context.Context, load func() ([]dto.TagResponse, error)) ([]dto.TagResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListTags", ctx, load)
+	ret0, _ := ret[0].([]dto.TagResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListTags indicates an expected call of ListTags.
+func (mr *MocktagCacheMockRecorder) ListTags(ctx, load any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTags", reflect.TypeOf((*MocktagCache)(nil).ListTags), ctx, load)
 }

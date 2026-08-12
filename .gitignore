@@ -46,3 +46,6 @@ docs/ROADMAP.md
 CLAUDE.md
 GEMINI.md
 docs/superpowers/
+
+# Local worktrees (subagent-driven-development)
+.worktrees/

@@ -16,21 +16,23 @@ func NewProfileRepo(db *bun.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
-// NicknamesByUserIDs returns a user_id -> nickname map for the given users in a
-// single round-trip. Users without a profile are simply absent from the map, so
-// the caller gets an empty nickname for them rather than an error.
-func (r *ProfileRepo) NicknamesByUserIDs(ctx context.Context, ids []int64) (map[int64]string, error) {
+// DisplayNamesByUserIDs returns a user_id -> display name map for the given
+// users in a single round-trip, applying the shared display-name rule
+// (domain.DisplayNameOf). Users without a profile are simply absent from the
+// map, so the caller gets an empty name for them rather than an error.
+func (r *ProfileRepo) DisplayNamesByUserIDs(ctx context.Context, ids []int64) (map[int64]string, error) {
 	if len(ids) == 0 {
 		return map[int64]string{}, nil
 	}
 
 	var rows []struct {
-		UserID   int64  `bun:"user_id"`
-		Nickname string `bun:"nickname"`
+		UserID      int64   `bun:"user_id"`
+		Username    string  `bun:"username"`
+		DisplayName *string `bun:"display_name"`
 	}
 	err := r.db.NewSelect().
 		Model((*domain.Profile)(nil)).
-		Column("user_id", "nickname").
+		Column("user_id", "username", "display_name").
 		Where("user_id IN (?)", bun.In(ids)).
 		Scan(ctx, &rows)
 	if err != nil {
@@ -39,7 +41,7 @@ func (r *ProfileRepo) NicknamesByUserIDs(ctx context.Context, ids []int64) (map[
 
 	out := make(map[int64]string, len(rows))
 	for _, row := range rows {
-		out[row.UserID] = row.Nickname
+		out[row.UserID] = domain.DisplayNameOf(row.Username, row.DisplayName)
 	}
 	return out, nil
 }
@@ -71,7 +73,8 @@ func (r *ProfileRepo) UpdateProfile(ctx context.Context, profile *domain.Profile
 	_, err := r.db.NewInsert().
 		Model(profile).
 		On("CONFLICT (user_id) DO UPDATE").
-		Set("nickname = EXCLUDED.nickname").
+		Set("username = EXCLUDED.username").
+		Set("display_name = EXCLUDED.display_name").
 		Set("bio = EXCLUDED.bio").
 		Set("avatar_file_id = EXCLUDED.avatar_file_id").
 		Returning("*").

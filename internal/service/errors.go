@@ -14,4 +14,8 @@ var (
 	ErrMeetupFinished       = errors.New("meetup already finished")
 	ErrOrganizerCannotLeave = errors.New("organizer cannot leave own meetup")
 	ErrChatReadOnly         = errors.New("chat is read-only")
+	// ErrTooManyRequests is a throttle the service itself applies (resend
+	// cooldown/quota, confirmation-code attempt limit) as opposed to the
+	// IP-based RateLimiter middleware. Maps to 429.
+	ErrTooManyRequests = errors.New("too many requests")
 )

@@ -239,17 +239,17 @@ func mapMessagePreview(m *domain.Message) *dto.MessagePreview {
 		content = ""
 	}
 
-	var nickname string
+	var displayName string
 	if m.Sender != nil && m.Sender.Profile != nil {
-		nickname = m.Sender.Profile.Nickname
+		displayName = domain.DisplayNameOf(m.Sender.Profile.Username, m.Sender.Profile.DisplayName)
 	}
 
 	return &dto.MessagePreview{
-		ID:             m.ID,
-		SenderID:       m.SenderID,
-		SenderNickname: nickname,
-		Content:        content,
-		IsDeleted:      isDeleted,
+		ID:                m.ID,
+		SenderID:          m.SenderID,
+		SenderDisplayName: displayName,
+		Content:           content,
+		IsDeleted:         isDeleted,
 	}
 }
 

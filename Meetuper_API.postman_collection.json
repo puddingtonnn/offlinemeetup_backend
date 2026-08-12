@@ -1,0 +1,683 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-4a5b-bc6d-7e8f90a1b2c3",
+		"name": "Meetuper API",
+		"description": "API для мобильного приложения офлайн митапов. Включает S3 хранилище, чаты и гео-поиск.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Dev Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"token\", jsonData.token);",
+									"    console.log(\"Token automatically saved to environment!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"test@example.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/dev/login?email=test@example.com",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"dev",
+								"login"
+							],
+							"query": [
+								{
+									"key": "email",
+									"value": "test@example.com"
+								}
+							]
+						},
+						"description": "Удобный логин для разработки. Создает юзера и возвращает JWT. Автоматически сохраняет токен в переменные."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Me",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/me",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"me"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Register (email/password)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"register"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"test@example.com\",\n    \"username\": \"testuser\",\n    \"password\": \"SuperSecret123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Starts email/password registration. Always returns 202 — even if the email already has an account (Google/Telegram) — and no user row is created until the emailed code is confirmed via Verify Email. The response carries a registration_id identifying THIS attempt; it is saved to the {{registrationId}} collection variable by the test script and must be sent back to Verify Email / Resend Code. Two concurrent registrations on one email get different ids and cannot overwrite each other."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// /register answers 202 with the registration_id that",
+									"// /verify-email and /resend-code must echo back. Stash it so the",
+									"// next two requests work without copy-pasting.",
+									"if (pm.response.code === 202) {",
+									"    pm.collectionVariables.set(\"registrationId\", pm.response.json().registration_id);",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Verify Email",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/verify-email",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"verify-email"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"test@example.com\",\n    \"registration_id\": \"{{registrationId}}\",\n    \"code\": \"123456\",\n    \"username\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Confirms the 6-digit code emailed by Register, creates the account (or attaches the password to an existing one), and returns an access/refresh token pair. `username` is optional — resend a different one only if verify returned 409 (the chosen username was taken in the meantime)."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.access_token) {",
+									"    pm.environment.set(\"token\", jsonData.access_token);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh_token);",
+									"    console.log(\"Tokens automatically saved to environment!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Resend Code",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/resend-code",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"resend-code"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"test@example.com\",\n    \"registration_id\": \"{{registrationId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Re-sends the confirmation code for a pending registration. Always 202 (rate-limited by cooldown + hourly quota)."
+					},
+					"response": []
+				},
+				{
+					"name": "Login (email/username + password)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"login"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"login\": \"test@example.com\",\n    \"password\": \"SuperSecret123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Authenticates with `login` (email or username, detected by presence of '@') and `password`. Unknown login and wrong password return the identical error."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.access_token) {",
+									"    pm.environment.set(\"token\", jsonData.access_token);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh_token);",
+									"    console.log(\"Tokens automatically saved to environment!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Forgot Password",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/forgot-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"forgot-password"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"login\": \"test@example.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Starts a password reset. Always returns 202 regardless of whether the account exists; if it does, a reset code is emailed."
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/reset-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"reset-password"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"test@example.com\",\n    \"code\": \"123456\",\n    \"new_password\": \"NewSuperSecret123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Completes a forgot-password flow with the emailed code and a new password. Revokes all refresh tokens for the account."
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "PATCH",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/auth/password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"auth",
+								"password"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"current_password\": \"SuperSecret123\",\n    \"new_password\": \"NewSuperSecret123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Changes the password of the authenticated caller. `current_password` may be left empty only if the account has no password set yet (Google/Telegram-only account setting its first password). Revokes all other refresh tokens.",
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Meetups",
+			"item": [
+				{
+					"name": "List Meetups",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/meetups?lat=55.75&lng=37.61&radius=5000",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"meetups"
+							],
+							"query": [
+								{
+									"key": "lat",
+									"value": "55.75"
+								},
+								{
+									"key": "lng",
+									"value": "37.61"
+								},
+								{
+									"key": "radius",
+									"value": "5000"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Meetup",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Новый митап в парке\",\n    \"description\": \"Собираемся поиграть во фрисби\",\n    \"is_public\": true,\n    \"start_time\": \"2026-05-10T15:00:00Z\",\n    \"end_time\": \"2026-05-10T18:00:00Z\",\n    \"coordinates\": {\n        \"lat\": 55.7512,\n        \"lng\": 37.6184\n    },\n    \"address\": \"Парк Горького\",\n    \"tags\": [1, 2],\n    \"cover_file_id\": \"uuid-здесь\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v1/meetups",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"meetups"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Join Meetup",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/meetups/55/join",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"meetups",
+								"55",
+								"join"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Profile",
+			"item": [
+				{
+					"name": "Get My Profile",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"profile"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"method": "PATCH",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"newnick\",\n    \"display_name\": \"NewNick\",\n    \"bio\": \"Люблю Go и S3\",\n    \"avatar_file_id\": \"cd960a86-a1e9-40c5-a66d-935a9ade582e\",\n    \"tags\": [1, 5, 8]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v1/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"profile"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Files (S3)",
+			"item": [
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v1/files/upload",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"files",
+								"upload"
+							]
+						},
+						"description": "Загрузка файла в S3. Возвращает UUID, который нужно использовать в профиле или митапе."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Chats",
+			"item": [
+				{
+					"name": "Get My Chats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/chats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"chats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Send Message",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"Привет всем!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v1/chats/1/messages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"chats",
+								"1",
+								"messages"
+							]
+						},
+						"description": "Используйте ID ЧАТА, а не митапа!"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Chat Messages",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/chats/1/messages?limit=50",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"chats",
+								"1",
+								"messages"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "50"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Geo & Tags",
+			"item": [
+				{
+					"name": "Suggest Address",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/geo/suggest?query=Москва Тверская",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"geo",
+								"suggest"
+							],
+							"query": [
+								{
+									"key": "query",
+									"value": "Москва Тверская"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Tags",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v1/tags",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v1",
+								"tags"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:9090",
+			"type": "string"
+		},
+		{
+			"key": "registrationId",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

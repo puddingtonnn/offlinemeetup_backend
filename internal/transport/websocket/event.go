@@ -36,9 +36,9 @@ type WSMessageDeletedPayload struct {
 }
 
 type WSTypingPayload struct {
-	ChatID   int64  `json:"chat_id"`
-	UserID   int64  `json:"user_id,omitempty"`
-	Nickname string `json:"nickname,omitempty"`
+	ChatID      int64  `json:"chat_id"`
+	UserID      int64  `json:"user_id,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 
 type WSMessagesReadPayload struct {
@@ -46,14 +46,14 @@ type WSMessagesReadPayload struct {
 	LastReadMessageID int64 `json:"last_read_message_id"`
 }
 
-// WSPresencePayload carries one user's online state. Nickname is the display
+// WSPresencePayload carries one user's online state. DisplayName is the
 // name so clients render presence without a second lookup. LastSeen is a unix
 // timestamp, set only for offline transitions/snapshots.
 type WSPresencePayload struct {
-	UserID   int64  `json:"user_id"`
-	Online   bool   `json:"online"`
-	Nickname string `json:"nickname,omitempty"`
-	LastSeen *int64 `json:"last_seen,omitempty"`
+	UserID      int64  `json:"user_id"`
+	Online      bool   `json:"online"`
+	DisplayName string `json:"display_name,omitempty"`
+	LastSeen    *int64 `json:"last_seen,omitempty"`
 }
 
 // WSPresenceSnapshotPayload is the initial presence state of a chat's members,

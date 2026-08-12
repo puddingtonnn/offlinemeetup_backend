@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/puddingtonnn/offlinemeetup_backend/internal/safego"
 	"github.com/puddingtonnn/offlinemeetup_backend/internal/service"
 )
 
@@ -55,7 +56,7 @@ func newUpgrader(allowedOrigins []string) websocket.Upgrader {
 type Client struct {
 	userID      int64
 	connID      string
-	nickname    string
+	displayName string
 	hub         *Hub
 	conn        *websocket.Conn
 	send        chan []byte
@@ -164,7 +165,7 @@ func (c *Client) eventPump(ctx context.Context) {
 }
 
 func (c *Client) handleEventGuarded(ctx context.Context, event WSEvent) {
-	defer recoverPanic(c.log, "ws event handler")
+	defer safego.Recover(c.log, "ws event handler")
 	c.handleEvent(ctx, event)
 }
 
@@ -235,7 +236,7 @@ func (c *Client) handleEvent(ctx context.Context, event WSEvent) {
 		}
 
 		req.UserID = c.userID
-		req.Nickname = c.nickname
+		req.DisplayName = c.displayName
 		newPayload, _ := json.Marshal(req)
 
 		responseEvent := WSEvent{
@@ -305,7 +306,7 @@ func (c *Client) markOffline() {
 	}
 	if offline && len(recipients) > 0 {
 		ls := lastSeen.Unix()
-		c.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOffline, c.userID, false, c.nickname, &ls))
+		c.hub.BroadcastToUsers(recipients, presenceEvent(EventUserOffline, c.userID, false, c.displayName, &ls))
 	}
 }
 
@@ -374,7 +375,7 @@ func (c *Client) writePump(ctx context.Context, cancel context.CancelFunc) {
 			// Refresh presence TTL on the same tick as the WS ping so a live
 			// connection never decays to offline. Best-effort, off the write path.
 			if c.presence != nil {
-				safeGo(c.log, func() {
+				safego.Go(c.log, func() {
 					hbCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
 					if err := c.presence.Heartbeat(hbCtx, c.userID); err != nil {

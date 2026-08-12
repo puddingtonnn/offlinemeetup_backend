@@ -87,7 +87,7 @@ func TestProfileService_GetProfile(t *testing.T) {
 			mockSetup: func(repo *MockProfileRepo, tagRepo *MockUserTagUpdater) {
 				// Указываем: когда вызовут GetByUserID с нашими параметрами, верни профиль и nil ошибку
 				repo.On("GetByUserID", mock.Anything, testUserID).
-					Return(&domain.Profile{ID: 100, UserID: testUserID, Nickname: "john_doe"}, nil)
+					Return(&domain.Profile{ID: 100, UserID: testUserID, Username: "john_doe"}, nil)
 
 				// Указываем: когда вызовут GetTagsByUserID, верни массив тегов
 				tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).
@@ -96,7 +96,7 @@ func TestProfileService_GetProfile(t *testing.T) {
 			expectedError: nil,
 			checkResult: func(t *testing.T, profile *dto.ProfileResponse) {
 				assert.NotNil(t, profile)
-				assert.Equal(t, "john_doe", profile.Nickname)
+				assert.Equal(t, "john_doe", profile.Username)
 				assert.Len(t, profile.Tags, 1)
 				assert.Equal(t, "Golang", profile.Tags[0].Name)
 			},
@@ -166,7 +166,7 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 		repo := new(MockProfileRepo)
 		tagRepo := new(MockUserTagUpdater)
 
-		existing := &domain.Profile{ID: 100, UserID: testUserID, Nickname: "old"}
+		existing := &domain.Profile{ID: 100, UserID: testUserID, Username: "old"}
 		// GetByUserID вызывается дважды: в UpdateProfile и затем в GetProfile.
 		repo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
 		repo.On("UpdateProfile", mock.Anything, mock.Anything).Return(existing, nil)
@@ -179,12 +179,12 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 
 		newNick := "new"
 		resp, err := svc.UpdateProfile(context.Background(), testUserID, dto.UpdateProfileRequest{
-			Nickname: &newNick,
+			Username: &newNick,
 			TagIDs:   []int64{1, 2},
 		})
 
 		assert.NoError(t, err)
-		assert.Equal(t, "new", resp.Nickname)
+		assert.Equal(t, "new", resp.Username)
 		assert.Len(t, resp.Tags, 1)
 		repo.AssertExpectations(t)
 		tagRepo.AssertExpectations(t)
@@ -194,7 +194,7 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 		repo := new(MockProfileRepo)
 		tagRepo := new(MockUserTagUpdater)
 
-		existing := &domain.Profile{ID: 100, UserID: testUserID, Nickname: "old"}
+		existing := &domain.Profile{ID: 100, UserID: testUserID, Username: "old"}
 		repo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
 		repo.On("UpdateProfile", mock.Anything, mock.Anything).Return(existing, nil)
 		tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).
@@ -218,7 +218,7 @@ func TestProfileService_UpdateProfile(t *testing.T) {
 		profileRepo := new(MockProfileRepo)
 		tagRepo := new(MockUserTagUpdater)
 
-		existing := &domain.Profile{ID: 100, UserID: testUserID, Nickname: "old"}
+		existing := &domain.Profile{ID: 100, UserID: testUserID, Username: "old"}
 		profileRepo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
 		profileRepo.On("UpdateProfile", mock.Anything, mock.Anything).Return(nil, wantErr)
 
@@ -242,7 +242,7 @@ func TestProfileService_CacheHitAndInvalidate(t *testing.T) {
 	tagRepo := new(MockUserTagUpdater)
 	mr, pc := newProfileCache(t)
 
-	existing := &domain.Profile{ID: 200, UserID: testUserID, Nickname: "neo"}
+	existing := &domain.Profile{ID: 200, UserID: testUserID, Username: "neo"}
 	repo.On("GetByUserID", mock.Anything, testUserID).Return(existing, nil)
 	tagRepo.On("GetTagsByUserID", mock.Anything, testUserID).Return([]domain.Tag{}, nil)
 
@@ -261,7 +261,7 @@ func TestProfileService_CacheHitAndInvalidate(t *testing.T) {
 	// Обновление сбрасывает кеш, финальный GetProfile перечитывает из репо.
 	repo.On("UpdateProfile", mock.Anything, mock.Anything).Return(existing, nil)
 	newNick := "trinity"
-	_, err = svc.UpdateProfile(ctx, testUserID, dto.UpdateProfileRequest{Nickname: &newNick})
+	_, err = svc.UpdateProfile(ctx, testUserID, dto.UpdateProfileRequest{Username: &newNick})
 	require.NoError(t, err)
 	// 1 (первое чтение) + 1 (внутри UpdateProfile) + 1 (финальный GetProfile после инвалидации).
 	repo.AssertNumberOfCalls(t, "GetByUserID", 3)

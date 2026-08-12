@@ -61,6 +61,37 @@ type Config struct {
 	// (MAX_UPLOAD_SIZE, дефолт 100 MB). Применяется и в хендлере (MaxBytesReader),
 	// и в FileService.Upload.
 	MaxUploadSize int64
+
+	// SMTP-реле для писем регистрации/сброса пароля. В local/dev могут быть
+	// пустыми (тогда используется logMailer вместо smtpMailer — выбор в Task 7);
+	// вне local/dev обязательны, см. проверку ниже.
+	MailSMTPHost     string
+	MailSMTPPort     string
+	MailSMTPUser     string
+	MailSMTPPassword string
+	MailFrom         string
+	// MailSendTimeout — таймаут одной попытки отправки письма (MAIL_SEND_TIMEOUT,
+	// дефолт 10s).
+	MailSendTimeout time.Duration
+
+	// EmailCodeTTL — время жизни кода подтверждения email (EMAIL_CODE_TTL,
+	// дефолт 15m), совпадает с TTL pending-объекта в Redis (ADR-8).
+	// EmailCodeMaxAttempts — максимум неверных попыток ввода кода до отказа
+	// (EMAIL_CODE_MAX_ATTEMPTS, дефолт 5).
+	EmailCodeTTL         time.Duration
+	EmailCodeMaxAttempts int
+	// EmailResendCooldown — минимальный интервал между повторными отправками
+	// письма с кодом на один email (EMAIL_RESEND_COOLDOWN, дефолт 60s).
+	// EmailSendQuotaPerHour — максимум писем на один email в час
+	// (EMAIL_SEND_QUOTA_PER_HOUR, дефолт 5).
+	EmailResendCooldown   time.Duration
+	EmailSendQuotaPerHour int
+
+	// LoginFailLimit — порог неудачных попыток входа до временной блокировки
+	// (LOGIN_FAIL_LIMIT, дефолт 10, ADR-13). LoginFailWindow — скользящее окно
+	// подсчёта (LOGIN_FAIL_WINDOW, дефолт 15m).
+	LoginFailLimit  int
+	LoginFailWindow time.Duration
 }
 
 // durEnv reads a duration from env (e.g. "200ms", "5m"); on an empty or
@@ -79,6 +110,17 @@ func durEnv(key string, def time.Duration) time.Duration {
 func int64Env(key string, def int64) int64 {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+// intEnv reads a plain int from env; on an empty or unparseable value it
+// returns def.
+func intEnv(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
 	}
@@ -106,6 +148,12 @@ func Load() (*Config, error) {
 
 		RedisAddr:     os.Getenv("REDIS_ADDR"),
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+
+		MailSMTPHost:     os.Getenv("MAIL_SMTP_HOST"),
+		MailSMTPPort:     os.Getenv("MAIL_SMTP_PORT"),
+		MailSMTPUser:     os.Getenv("MAIL_SMTP_USER"),
+		MailSMTPPassword: os.Getenv("MAIL_SMTP_PASSWORD"),
+		MailFrom:         os.Getenv("MAIL_FROM"),
 	}
 
 	if cfg.RedisAddr == "" {
@@ -127,6 +175,14 @@ func Load() (*Config, error) {
 	cfg.TrustProxyHeaders = os.Getenv("TRUST_PROXY_HEADERS") == "true"
 	cfg.JWTAccessTTL = durEnv("JWT_ACCESS_TTL", 15*time.Minute)
 	cfg.JWTRefreshTTL = durEnv("JWT_REFRESH_TTL", 30*24*time.Hour)
+
+	cfg.MailSendTimeout = durEnv("MAIL_SEND_TIMEOUT", 10*time.Second)
+	cfg.EmailCodeTTL = durEnv("EMAIL_CODE_TTL", 15*time.Minute)
+	cfg.EmailCodeMaxAttempts = intEnv("EMAIL_CODE_MAX_ATTEMPTS", 5)
+	cfg.EmailResendCooldown = durEnv("EMAIL_RESEND_COOLDOWN", 60*time.Second)
+	cfg.EmailSendQuotaPerHour = intEnv("EMAIL_SEND_QUOTA_PER_HOUR", 5)
+	cfg.LoginFailLimit = intEnv("LOGIN_FAIL_LIMIT", 10)
+	cfg.LoginFailWindow = durEnv("LOGIN_FAIL_WINDOW", 15*time.Minute)
 
 	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
 		for o := range strings.SplitSeq(origins, ",") {
@@ -158,6 +214,33 @@ func Load() (*Config, error) {
 	}
 	if cfg.Env == "" {
 		cfg.Env = "local"
+	}
+	// SMTP-реле обязательно вне local/dev: там нет logMailer-фолбэка, и пустой
+	// хост/креды означают, что письма верификации/сброса пароля молча не
+	// уйдут ни при регистрации, ни при восстановлении доступа. В local/dev
+	// используется logMailer (Task 7), так что пустые значения там ок — как
+	// уже устроено с APP_ENV-gated dev-login/Swagger в router.go.
+	// 587 (submission + STARTTLS) is what every relay we'd plausibly use
+	// speaks — Gmail, Unisender Go, SES. Defaulted rather than required so a
+	// local smoke test only needs host/user/password/from; note that the
+	// mailer speaks STARTTLS only, so an implicit-TLS port (465) would need
+	// a code change, not just this value.
+	if cfg.MailSMTPPort == "" {
+		cfg.MailSMTPPort = "587"
+	}
+	if cfg.Env != "local" && cfg.Env != "dev" {
+		if cfg.MailSMTPHost == "" {
+			return nil, errors.New("MAIL_SMTP_HOST is not set")
+		}
+		if cfg.MailSMTPUser == "" {
+			return nil, errors.New("MAIL_SMTP_USER is not set")
+		}
+		if cfg.MailSMTPPassword == "" {
+			return nil, errors.New("MAIL_SMTP_PASSWORD is not set")
+		}
+		if cfg.MailFrom == "" {
+			return nil, errors.New("MAIL_FROM is not set")
+		}
 	}
 	if cfg.DaDataToken == "" {
 		fmt.Println("WARNING: DADATA_TOKEN is empty")

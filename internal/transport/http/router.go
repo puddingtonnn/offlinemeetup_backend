@@ -54,6 +54,12 @@ func NewRouter(authHandler *handler.AuthHandler,
 			r.Use(authMiddleware.RateLimiter(rdb, log, "auth", 20, time.Minute, cfg.TrustProxyHeaders))
 
 			r.Post("/auth/google", authHandler.GoogleLogin)
+			r.Post("/auth/register", authHandler.Register)
+			r.Post("/auth/verify-email", authHandler.VerifyEmail)
+			r.Post("/auth/resend-code", authHandler.ResendCode)
+			r.Post("/auth/login", authHandler.Login)
+			r.Post("/auth/forgot-password", authHandler.ForgotPassword)
+			r.Post("/auth/reset-password", authHandler.ResetPassword)
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Route("/auth/telegram", func(r chi.Router) {
@@ -89,6 +95,7 @@ func NewRouter(authHandler *handler.AuthHandler,
 			r.Use(authMiddleware.AuthMiddleware(cfg, statusChecker))
 
 			r.Get("/auth/me", authHandler.Me)
+			r.Patch("/auth/password", authHandler.ChangePassword)
 
 			r.Route("/profile", func(r chi.Router) {
 				r.Get("/", profileHandler.GetMyProfile)

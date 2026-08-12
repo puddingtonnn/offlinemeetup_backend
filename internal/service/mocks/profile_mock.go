@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	domain "github.com/puddingtonnn/offlinemeetup_backend/internal/domain"
+	dto "github.com/puddingtonnn/offlinemeetup_backend/internal/dto"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -122,4 +123,57 @@ func (m *MockUserTagUpdater) UpdateTags(ctx context.Context, userID int64, tagID
 func (mr *MockUserTagUpdaterMockRecorder) UpdateTags(ctx, userID, tagIDs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateTags", reflect.TypeOf((*MockUserTagUpdater)(nil).UpdateTags), ctx, userID, tagIDs)
+}
+
+// MockprofileCache is a mock of profileCache interface.
+type MockprofileCache struct {
+	ctrl     *gomock.Controller
+	recorder *MockprofileCacheMockRecorder
+	isgomock struct{}
+}
+
+// MockprofileCacheMockRecorder is the mock recorder for MockprofileCache.
+type MockprofileCacheMockRecorder struct {
+	mock *MockprofileCache
+}
+
+// NewMockprofileCache creates a new mock instance.
+func NewMockprofileCache(ctrl *gomock.Controller) *MockprofileCache {
+	mock := &MockprofileCache{ctrl: ctrl}
+	mock.recorder = &MockprofileCacheMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockprofileCache) EXPECT() *MockprofileCacheMockRecorder {
+	return m.recorder
+}
+
+// InvalidateProfile mocks base method.
+func (m *MockprofileCache) InvalidateProfile(ctx context.Context, userID int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InvalidateProfile", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InvalidateProfile indicates an expected call of InvalidateProfile.
+func (mr *MockprofileCacheMockRecorder) InvalidateProfile(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InvalidateProfile", reflect.TypeOf((*MockprofileCache)(nil).InvalidateProfile), ctx, userID)
+}
+
+// Profile mocks base method.
+func (m *MockprofileCache) Profile(ctx context.Context, userID int64, load func() (*dto.ProfileResponse, error)) (*dto.ProfileResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Profile", ctx, userID, load)
+	ret0, _ := ret[0].(*dto.ProfileResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Profile indicates an expected call of Profile.
+func (mr *MockprofileCacheMockRecorder) Profile(ctx, userID, load any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Profile", reflect.TypeOf((*MockprofileCache)(nil).Profile), ctx, userID, load)
 }
